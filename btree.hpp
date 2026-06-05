@@ -13,13 +13,19 @@
 namespace btree {
 
 
-
 struct [[gnu::packed]] Header {
     u8 checksum_[32]; 
-    u8 fsid_[16];     
+    fs::uuid_t fsid_;     
     u8 level_;
     u32 nritems_;
     // u8 padding_[17] = {0};
+
+
+    Header () {
+        std::memset(this, 0, sizeof(Header));
+    }
+
+    Header(fs::uuid_t fsid, u8 level) : fsid_(fsid), level_(level), nritems_(0) { }
 };
 
 struct [[gnu::packed]] Item {
@@ -40,8 +46,6 @@ constexpr u16 PTRS_SIZE = DATA_SIZE / sizeof(KeyPtr);
 
 struct [[gnu::packed]] Node {
     Header hdr_;
-    
-
     u8 data_[DATA_SIZE];
 
     Node() {
@@ -55,6 +59,9 @@ struct [[gnu::packed]] Node {
     Node(int fd, u64 addr) {
         lseek(fd, addr, SEEK_SET);
         read(fd, this, BLOCK_SIZE);
+    }
+
+    Node (fs::uuid_t uuid, int level) : hdr_(uuid, level)  {
     }
 
     inline bool is_item() const {
@@ -83,24 +90,10 @@ struct [[gnu::packed]] Node {
 };
 static_assert(sizeof(Node) == 4096, "Sizeof node must be 4k");
 
-struct [[gnu::packed]] SuperBlock {
-    u8 csum_[32];       
-    u8 fsid_[16];       
-    u64 bytenr_;        
-    u64 flags_;
-    u8 magic_[8];       
-    u64 generation_;    
-    
-    u64 root_tree_root_; 
-    u32 nodesize_ = BLOCK_SIZE;
 
-    SuperBlock() {
-        std::memmove(magic_, "MINIBTFS", 8);
-    }
-};
 
 class BTree {
-    SuperBlock sb;
+    fs::SuperBlock sb;
     Node root;
     int fd;
 

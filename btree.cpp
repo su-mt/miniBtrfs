@@ -1,7 +1,7 @@
 #include "btree.hpp"
+#include <cstring>
 
 namespace btree {
-
 
 std::optional<Item> BTree::searchR(const Node& h, Key v, int ht) {
     if (ht == 0) {
@@ -34,7 +34,10 @@ KeyPtr BTree::split(Node& h, u64 addr) {
     u32 right_capacity = max_capacity - left_capacity;
 
     Node right_node;
-    std::memcpy(right_node.hdr_.fsid_, h.hdr_.fsid_, 16);
+
+
+    right_node.hdr_.fsid_ = h.hdr_.fsid_;
+
     right_node.hdr_.level_ = h.hdr_.level_;
 
     if (h.is_item()) {
@@ -131,13 +134,14 @@ void BTree::insert(Item item) {
         lseek(fd, left_child_addr, SEEK_SET);
         write(fd, &left_node, BLOCK_SIZE);
         
-        u8 saved_fsid[16];
-        std::memcpy(saved_fsid, root.hdr_.fsid_, 16);
+        //std::memcpy(saved_fsid, root.hdr_.fsid_, 16);
+        fs::uuid_t saved_fsid = root.hdr_.fsid_;
         u8 new_level = root.hdr_.level_ + 1; 
         
         std::memset(&root, 0, sizeof(Node));
         
-        std::memcpy(root.hdr_.fsid_, saved_fsid, 16);
+        //std::memcpy(root.hdr_.fsid_, saved_fsid, 16);
+        root.hdr_.fsid_ = saved_fsid;
         root.hdr_.level_ = new_level;
         root.hdr_.nritems_ = 2; 
 
@@ -151,4 +155,4 @@ void BTree::insert(Item item) {
 }
 
 
-}
+} // namespace btree

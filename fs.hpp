@@ -2,7 +2,10 @@
 #define FS_HPP_
 
 
+#include <cstddef>
 #include <cstdint>
+#include <cstring>
+#include <random>
 
 using u64 = uint64_t;
 using u32 = uint32_t;
@@ -10,6 +13,7 @@ using u16 = uint16_t;
 using u8  = uint8_t;
 
 constexpr u32 BLOCK_SIZE = 4096;
+constexpr u32 MIN_FS_SIZE = BLOCK_SIZE * 10;
 
 namespace btree {
 enum class Type : u8 {
@@ -47,6 +51,68 @@ struct [[gnu::packed]] Key {
 
 
 namespace fs {
+
+struct [[gnu::packed]] uuid_t {
+    u8 uuid[16];
+
+
+    // uuid_t () { memset(uuid, 0, 16); }
+
+    // uuid_t(const uuid_t& other) {
+    //     std::memcpy(uuid , other.uuid, 16);
+    // }
+
+    // uuid_t& operator=(const uuid_t& other) {
+    //     std::memcpy(uuid, other.uuid, 16);
+    //     return *this;
+    // }
+
+    // inline u8* raw() { return uuid; }
+    // inline const u8* raw() const { return uuid; }
+
+    auto& operator[] (size_t ix) {
+        return uuid[ix];
+    }
+    const auto& operator[](size_t ix)const {
+        return uuid[ix];
+    }
+
+};
+
+struct [[gnu::packed]] SuperBlock {
+    u8 csum_[32];       
+    uuid_t fsid_;       
+    u64 bytenr_;        
+    u64 flags_;
+    u8 magic_[8];       
+    u64 generation_;    
+    
+    u64 root_tree_root_; 
+    u32 nodesize_ = BLOCK_SIZE;
+
+    SuperBlock() {
+        std::memset(this, 0, sizeof(SuperBlock)); 
+        std::memmove(magic_, "MINIBTFS", 8);
+        
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<uint8_t> dist(0, 255);
+
+        for(int i = 0; i < 16; i++) {
+            fsid_[i] = dist(gen);
+        }
+
+        bytenr_ = 0;            
+        generation_ = 1;        
+        nodesize_ = BLOCK_SIZE; 
+        
+
+
+        root_tree_root_ = BLOCK_SIZE; 
+    }
+};
+
+
 
 constexpr u8 MAX_NAME_SIZE = 64;
 
