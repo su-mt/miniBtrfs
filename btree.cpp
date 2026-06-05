@@ -21,11 +21,7 @@ std::optional<Item> BTree::searchR(const Node& h, Key v, int ht) {
     return std::nullopt;
 }
 
-u64 BTree::allocate_block() {
-    static u64 mock_addr = 10 * 1024 * 1024; 
-    mock_addr += BLOCK_SIZE;
-    return mock_addr;
-}
+
 
 KeyPtr BTree::split(Node& h, u64 addr) {
     u32 max_capacity = (h.is_item()) ? ITEMS_SIZE : PTRS_SIZE;
@@ -53,7 +49,7 @@ KeyPtr BTree::split(Node& h, u64 addr) {
     h.hdr_.nritems_ = left_capacity;
     right_node.hdr_.nritems_ = right_capacity;
 
-    u64 right_node_addr = allocate_block();
+    u64 right_node_addr = fs::allocate_block();
 
     lseek(fd, addr, SEEK_SET);
     write(fd, &h, BLOCK_SIZE);
@@ -128,7 +124,7 @@ void BTree::insert(Item item) {
     auto split_child = insertR(root, item, root.hdr_.level_, root_addr);
     
     if (split_child.has_value()) {
-        u64 left_child_addr = allocate_block();
+        u64 left_child_addr = fs::allocate_block();
         Node left_node = root;
         
         lseek(fd, left_child_addr, SEEK_SET);

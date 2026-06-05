@@ -30,7 +30,7 @@ struct [[gnu::packed]] Header {
 
 struct [[gnu::packed]] Item {
     Key key_;
-    u32 data_offset_; 
+    u64 data_offset_; 
     u32 data_size_;   
 };
 
@@ -62,6 +62,7 @@ struct [[gnu::packed]] Node {
     }
 
     Node (fs::uuid_t uuid, int level) : hdr_(uuid, level)  {
+        std::memset(data_, 0, DATA_SIZE);
     }
 
     inline bool is_item() const {
@@ -99,16 +100,19 @@ class BTree {
 
     std::optional<Item> searchR(const Node& h, Key v, int ht);
     std::optional<KeyPtr> insertR(Node& h, const Item& x, int ht, u64 current_blk_addr) ;
-    u64 allocate_block() ;
+
     KeyPtr split(Node& h, u64 addr) ;
 
 public:
     std::optional<Item> search(Key key) ;
     void insert(Item item);
+
+    BTree (fs::SuperBlock sb, btree::Node root, int fd) : sb(sb), root(root), fd(fd) {}
+
 };
 
 } // namespace btree
 
-
+using btree::BTree;
 
 #endif // BTREE_HPP_

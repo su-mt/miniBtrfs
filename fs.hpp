@@ -12,6 +12,7 @@ using u32 = uint32_t;
 using u16 = uint16_t;
 using u8  = uint8_t;
 
+
 constexpr u32 BLOCK_SIZE = 4096;
 constexpr u32 MIN_FS_SIZE = BLOCK_SIZE * 10;
 
@@ -56,19 +57,21 @@ struct [[gnu::packed]] uuid_t {
     u8 uuid[16];
 
 
-    // uuid_t () { memset(uuid, 0, 16); }
+#if 0
+    uuid_t () { memset(uuid, 0, 16); }
 
-    // uuid_t(const uuid_t& other) {
-    //     std::memcpy(uuid , other.uuid, 16);
-    // }
+    uuid_t(const uuid_t& other) {
+        std::memcpy(uuid , other.uuid, 16);
+    }
 
-    // uuid_t& operator=(const uuid_t& other) {
-    //     std::memcpy(uuid, other.uuid, 16);
-    //     return *this;
-    // }
+    uuid_t& operator=(const uuid_t& other) {
+        std::memcpy(uuid, other.uuid, 16);
+        return *this;
+    }
 
-    // inline u8* raw() { return uuid; }
-    // inline const u8* raw() const { return uuid; }
+    inline u8* raw() { return uuid; }
+    inline const u8* raw() const { return uuid; }
+#endif
 
     auto& operator[] (size_t ix) {
         return uuid[ix];
@@ -78,6 +81,8 @@ struct [[gnu::packed]] uuid_t {
     }
 
 };
+
+
 
 struct [[gnu::packed]] SuperBlock {
     u8 csum_[32];       
@@ -116,13 +121,22 @@ struct [[gnu::packed]] SuperBlock {
 
 constexpr u8 MAX_NAME_SIZE = 64;
 
+enum class InodeType : u8 {
+    File,
+    Dir
+};
+
 struct [[gnu::packed]] InodeItem {
     u64 size; //bytes
-    u8 mode;
+    InodeType mode;
 
+    InodeItem (InodeType type) : mode(type) {
+        // TODO: 
+        size = 0;
+    }
 
-    inline bool isDir () {return mode == 1;}
-    inline bool isFile () {return mode == 0;}
+    inline bool isDir () {return mode == InodeType::Dir;}
+    inline bool isFile () {return mode == InodeType::File;}
 
 };
 
@@ -158,7 +172,11 @@ struct [[gnu::unused]] [[gnu::packed]] ExtentItems {
 };
 
 
-
+inline u64 allocate_block() {
+    static u64 mock_addr = 10 * 1024 * 1024; 
+    mock_addr += BLOCK_SIZE;
+    return mock_addr;
+}
 
     
 } // namespace fs
