@@ -33,17 +33,22 @@ public:
         }
     }
 
-    void mkdir (u64 parent_id, const char* name);
-    void ls(u64 dir_id);
-    void create_file(u64 parent_id, const char* name);
-    void write_file(u64 inode_id, const void* data, size_t size, off_t offset); 
-    std::vector<u8> read_file(u64 inode_id, off_t offset) const;
-    u64 resolve_path(u64 current_dir_id, const char* path) const ;
-    [[nodiscard]] u64 cd(u64 current_dir_id, const char* name) const;
+    bool mkdir(u64 parent_id, const char* name);
+    bool ls(u64 dir_id);
+    bool create_file(u64 parent_id, const char* name);
+    bool write_file(u64 inode_id, const void* data, size_t size, off_t offset);
+    std::optional<std::vector<u8>> read_file(u64 inode_id, off_t offset) const ;
+    [[nodiscard]] std::optional<u64> resolve_path(u64 current_dir_id, const char* path) const;
+    [[nodiscard]] std::optional<u64> cd(u64 current_dir_id, const char* name) const;
+    void truncate(u64 inode_id, off_t new_size);
+
+    inline void sync() const {
+        fsync(this->fd);
+    }
 
     // fuse api
-    fs::InodeItem get_inode(u64 inode_id) const ;
-    std::vector<std::string> get_dir_entries(u64 dir_id) const ;
+    std::optional<fs::InodeItem> get_inode(u64 inode_id) const ;
+    std::optional<std::vector<std::string>> get_dir_entries(u64 dir_id) const;
 
     bool inspectFS();
 
@@ -53,6 +58,9 @@ public:
 
 } // minibtrfs
 using minibtrfs::MiniBtrfs ;
+
+
+
 
 
 

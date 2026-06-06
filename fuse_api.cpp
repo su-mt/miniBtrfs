@@ -8,12 +8,21 @@
 #include <string>
 #include <algorithm>
 #include <vector>
+#include <optional>
 
 #include "minibtrfs.hpp"
 
+// Настройка уровня логирования
+#ifndef MB_LOG_LEVEL
+#define MB_LOG_LEVEL 0
+#endif
+
+#define LOG_BTRFS(msg) do { if (MB_LOG_LEVEL >= 1) std::cerr << "[BTRFS] " << msg << std::endl; } while(0)
+#define LOG_FUSE(msg)  do { if (MB_LOG_LEVEL >= 2) std::cerr << "[FUSE]  " << msg << std::endl; } while(0)
+
 // Хелпер для быстрого доступа к объекту файловой системы
-static inline MiniBtrfs* get_fs() {
-    return static_cast<MiniBtrfs*>(fuse_get_context()->private_data);
+static inline minibtrfs::MiniBtrfs* get_fs() {
+    return static_cast<minibtrfs::MiniBtrfs*>(fuse_get_context()->private_data);
 }
 
 // Хелпер для разбиения пути вида "/world/hello.txt" -> parent="/world", name="hello.txt"
@@ -35,35 +44,38 @@ static void split_path(const std::string& full_path, std::string& parent, std::s
 // Чтение метаданных (stat)
 // ---------------------------------------------------------
 static int mb_getattr(const char *path, struct stat *stbuf) {
+    LOG_FUSE("getattr called for " << path);
     memset(stbuf, 0, sizeof(struct stat));
-    MiniBtrfs* fs = get_fs();
+    minibtrfs::MiniBtrfs* fs = get_fs();
 
     if (strcmp(path, "/") == 0) {
-        stbuf->st_mode = S_IFDIR | 0777; // Заглушка: всем всё разрешено
+        stbuf->st_mode = S_IFDIR | 0777; 
         stbuf->st_nlink = 2;
         return 0;
     }
 
-    try {
-        // resolve_path стартует с корня (256)
-        u64 inode_id = fs->resolve_path(256, path);
-        
-        // Для этого нужно добавить публичный метод fs->get_inode(id) 
-        // который делает tree.search и read InodeItem
-        fs::InodeItem inode = fs->get_inode(inode_id); 
-        
-        if (inode.isDir()) { // Директория
-            stbuf->st_mode = S_IFDIR | 0777;
-            stbuf->st_nlink = 2;
-        } else {               // Обычный файл
-            stbuf->st_mode = S_IFREG | 0777;
-            stbuf->st_nlink = 1;
-            stbuf->st_size = inode.size;
-        }
-        return 0;
-    } catch (...) {
-        return -ENOENT; // Вернет ошибку, если пути нет
+    auto inode_id_opt = fs->resolve_path(256, path);
+    if (!inode_id_opt) {
+        LOG_FUSE("getattr: path not found");
+        return -ENOENT;
     }
+
+    auto inode_opt = fs->get_inode(*inode_id_opt); 
+    if (!inode_opt) {
+        LOG_FUSE("getattr: failed to read inode");
+        return -ENOENT;
+    }
+
+    if (inode_opt->isDir()) { 
+        stbuf->st_mode = S_IFDIR | 0777;
+        stbuf->st_nlink = 2;
+    } else {               
+        stbuf->st_mode = S_IFREG | 0777;
+        stbuf->st_nlink = 1;
+        stbuf->st_size = inode_opt->size;
+    }
+    
+    return 0;
 }
 
 // ---------------------------------------------------------
@@ -71,61 +83,75 @@ static int mb_getattr(const char *path, struct stat *stbuf) {
 // ---------------------------------------------------------
 static int mb_readdir(const char *path, void *buf, fuse_fill_dir_t filler,
                       off_t offset, struct fuse_file_info *fi) {
-    MiniBtrfs* fs = get_fs();
+    LOG_FUSE("readdir called for " << path);
+    minibtrfs::MiniBtrfs* fs = get_fs();
 
-    try {
-        u64 dir_id = fs->resolve_path(256, path);
-
-        filler(buf, ".", NULL, 0);
-        filler(buf, "..", NULL, 0);
-
-        // Для этого понадобится метод, возвращающий список имен в папке.
-        // Или можно добавить метод fs->get_dir_entries(dir_id) 
-        // который делает тот же цикл, что и в вашем старом REPL ls.
-        std::vector<std::string> entries = fs->get_dir_entries(dir_id);
-        
-        for (const auto& name : entries) {
-            filler(buf, name.c_str(), NULL, 0);
-        }
-        
-        return 0;
-    } catch (...) {
+    auto dir_id_opt = fs->resolve_path(256, path);
+    if (!dir_id_opt) {
+        LOG_FUSE("readdir: directory not found");
         return -ENOENT;
     }
+
+    filler(buf, ".", NULL, 0);
+    filler(buf, "..", NULL, 0);
+
+    auto entries_opt = fs->get_dir_entries(*dir_id_opt);
+    if (!entries_opt) {
+        LOG_FUSE("readdir: failed to fetch entries");
+        return -ENOENT;
+    }
+    
+    for (const auto& name : *entries_opt) {
+        filler(buf, name.c_str(), NULL, 0);
+    }
+    
+    return 0;
 }
 
 // ---------------------------------------------------------
 // Создание директории (mkdir)
 // ---------------------------------------------------------
 static int mb_mkdir(const char *path, mode_t mode) {
-    MiniBtrfs* fs = get_fs();
+    LOG_FUSE("mkdir called for " << path);
+    minibtrfs::MiniBtrfs* fs = get_fs();
     std::string parent_path, new_dir_name;
     split_path(path, parent_path, new_dir_name);
     
-    try {
-        u64 parent_id = fs->resolve_path(256, parent_path.c_str());
-        fs->mkdir(parent_id, new_dir_name.c_str());
-        return 0;
-    } catch (...) {
+    auto parent_id_opt = fs->resolve_path(256, parent_path.c_str());
+    if (!parent_id_opt) {
+        LOG_FUSE("mkdir: parent path not found");
         return -ENOENT;
     }
+
+    if (!fs->mkdir(*parent_id_opt, new_dir_name.c_str())) {
+        LOG_FUSE("mkdir: underlying FS error");
+        return -EIO;
+    }
+    
+    return 0;
 }
 
 // ---------------------------------------------------------
 // Создание пустого файла (touch)
 // ---------------------------------------------------------
 static int mb_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
-    MiniBtrfs* fs = get_fs();
+    LOG_FUSE("create called for " << path);
+    minibtrfs::MiniBtrfs* fs = get_fs();
     std::string parent_path, filename;
     split_path(path, parent_path, filename);
     
-    try {
-        u64 parent_id = fs->resolve_path(256, parent_path.c_str());
-        fs->create_file(parent_id, filename.c_str());
-        return 0;
-    } catch (...) {
+    auto parent_id_opt = fs->resolve_path(256, parent_path.c_str());
+    if (!parent_id_opt) {
+        LOG_FUSE("create: parent path not found");
         return -ENOENT;
     }
+
+    if (!fs->create_file(*parent_id_opt, filename.c_str())) {
+        LOG_FUSE("create: underlying FS error");
+        return -EIO;
+    }
+
+    return 0;
 }
 
 // ---------------------------------------------------------
@@ -133,25 +159,27 @@ static int mb_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
 // ---------------------------------------------------------
 static int mb_read(const char *path, char *buf, size_t size, off_t offset,
                    struct fuse_file_info *fi) {
-    MiniBtrfs* fs = get_fs();
+    LOG_FUSE("read called for " << path << " (offset=" << offset << ", size=" << size << ")");
+    minibtrfs::MiniBtrfs* fs = get_fs();
 
-    try {
-        u64 inode_id = fs->resolve_path(256, path);
-        
-        // Получаем вектор байт (от offset до конца файла)
-        std::vector<u8> data = fs->read_file(inode_id, offset);
-        
-        // FUSE ожидает не больше size байт. Вычисляем, сколько реально отдадим.
-        size_t bytes_to_copy = std::min((size_t)size, data.size());
-        
-        if (bytes_to_copy > 0) {
-            memcpy(buf, data.data(), bytes_to_copy);
-        }
-        
-        return bytes_to_copy; // FUSE сдвинет указатель сам
-    } catch (...) {
+    auto inode_id_opt = fs->resolve_path(256, path);
+    if (!inode_id_opt) {
+        LOG_FUSE("read: path not found");
         return -ENOENT;
     }
+    
+    auto data_opt = fs->read_file(*inode_id_opt, offset);
+    if (!data_opt) {
+        LOG_FUSE("read: failed to read data");
+        return -EIO;
+    }
+    
+    size_t bytes_to_copy = std::min((size_t)size, data_opt->size());
+    if (bytes_to_copy > 0) {
+        memcpy(buf, data_opt->data(), bytes_to_copy);
+    }
+    
+    return bytes_to_copy; 
 }
 
 // ---------------------------------------------------------
@@ -159,29 +187,34 @@ static int mb_read(const char *path, char *buf, size_t size, off_t offset,
 // ---------------------------------------------------------
 static int mb_write(const char *path, const char *buf, size_t size, off_t offset,
                     struct fuse_file_info *fi) {
-    MiniBtrfs* fs = get_fs();
+    LOG_FUSE("write called for " << path << " (offset=" << offset << ", size=" << size << ")");
+    minibtrfs::MiniBtrfs* fs = get_fs();
 
-    try {
-        u64 inode_id = fs->resolve_path(256, path);
-        fs->write_file(inode_id, (const u8*)buf, size, offset);
-        
-        return size; // Сообщаем VFS, что успешно записали всё запрошенное
-    } catch (...) {
+    auto inode_id_opt = fs->resolve_path(256, path);
+    if (!inode_id_opt) {
+        LOG_FUSE("write: path not found");
         return -ENOENT;
     }
+    
+    if (!fs->write_file(*inode_id_opt, (const u8*)buf, size, offset)) {
+        LOG_FUSE("write: failed to write data");
+        return -EIO;
+    }
+    
+    return size; 
 }
 
 // ---------------------------------------------------------
 // Удаление (Опционально)
 // ---------------------------------------------------------
 static int mb_unlink(const char *path) {
-    return -ENOSYS; // Заглушка: "Функция не реализована" (пока что)
+    LOG_FUSE("unlink called for " << path);
+    return -ENOSYS; 
 }
 
 // Регистрация коллбеков
 static struct fuse_operations mb_oper = {};
 
-// Инициализируем структуру (решение проблемы C-style designated initializers в C++)
 void init_fuse_operations() {
     mb_oper.getattr    = mb_getattr;
     mb_oper.mkdir      = mb_mkdir;
@@ -209,19 +242,12 @@ int main(int argc, char **argv) {
 
     init_fuse_operations();
 
-    try {
-        MiniBtrfs fs(image_file);
-        std::cout << "Mounting MiniBtrfs to " << fuse_argv[1] << "..." << std::endl;
+    minibtrfs::MiniBtrfs fs(image_file);
+    std::cout << "Mounting MiniBtrfs to " << fuse_argv[1] << "..." << std::endl;
+    LOG_FUSE("Fuse API Started. MB_LOG_LEVEL = " << MB_LOG_LEVEL);
 
-        // FUSE уходит в фоновый цикл (или работает в foreground, если передать -f)
-        int status = fuse_main(fuse_argc, fuse_argv, &mb_oper, &fs);
-        
-        delete[] fuse_argv;
-        return status;
-
-    } catch (const std::exception& e) {
-        std::cerr << "Fatal: " << e.what() << "\n";
-        delete[] fuse_argv;
-        return 1;
-    }
+    int status = fuse_main(fuse_argc, fuse_argv, &mb_oper, &fs);
+    
+    delete[] fuse_argv;
+    return status;
 }

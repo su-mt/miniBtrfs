@@ -1,39 +1,48 @@
 #include <iostream>
-#include <ostream>
 #include <stack>
 #include <string>
 #include <utility>
 #include <vector>
+#include <optional>
 #include "minibtrfs.hpp"
+
+using namespace minibtrfs;
+
 int main(int argc, char** argv)
 {
+    if (argc < 2) {
+        std::cerr << "Usage: " << argv[0] << " <image_file>\n";
+        return 1;
+    }
+
     int dir_id = 256, prevVisDirId = 256, prevDirId = 256;
-    std::stack<int> dirStack; dirStack.push(dir_id);
+    std::stack<int> dirStack; 
+    dirStack.push(dir_id);
+    
     std::string dirname;
     std::string cmd;
+    
     try {
-        MiniBtrfs FS (argv[1]);
+        // Конструктор может выбрасывать исключения при критических ошибках 
+        // (например, не найден файл образа), поэтому внешний try-catch оставляем.
+        MiniBtrfs FS(argv[1]);
+        
         for (;;) {
             std::cout << "BTFS>> ";
             std::cin >> cmd;
 
             if (cmd == "ls"){
-                try {
-                    FS.ls(dir_id);
-                } catch (const std::exception& e) {
-                    std::cerr << e.what() << "\n";
+                if (!FS.ls(dir_id)) {
+                    std::cerr << "ls: failed to list directory\n";
                 }
                 
             } else if (cmd == "mkdir") {
                 std::cin >> std::ws; 
                 std::getline(std::cin, dirname);
-                try {
-                    FS.mkdir(dir_id, dirname.c_str());
-                } catch (const std::invalid_argument& e) {
-                    std::cout << e.what() << "\n";
-                } catch (const std::exception& e) {
-                    std::cerr << e.what() << "\n";
+                if (!FS.mkdir(dir_id, dirname.c_str())) {
+                    std::cerr << "mkdir: failed to create directory\n";
                 }
+                
             } else if (cmd == "cd"){
                 std::cin >> std::ws; 
                 std::getline(std::cin, dirname);
@@ -46,7 +55,8 @@ int main(int argc, char** argv)
                     // FIXME:: this impl use stack, but parent id stored in INODE_REF, we should use it;
                     prevVisDirId = dir_id;
                     if (!dirStack.empty()){
-                        dir_id = dirStack.top(); dirStack.pop();
+                        dir_id = dirStack.top(); 
+                        dirStack.pop();
                     }
                 } else if (dirname == "/") {
                     prevVisDirId = dir_id;
@@ -55,106 +65,77 @@ int main(int argc, char** argv)
                         dirStack.pop();
                     }
                 } else {
-                    try {
+                    auto next_dir_opt = FS.cd(dir_id, dirname.c_str());
+                    if (next_dir_opt) {
                         prevVisDirId = dir_id;
                         dirStack.push(dir_id);
-                        dir_id = FS.cd(dir_id, dirname.c_str());
-                    } catch (const std::invalid_argument& e) {
-                        std::cout << e.what() << "\n";
-                    } catch (const std::exception& e) {
-                        std::cerr << e.what() << "\n";
+                        dir_id = *next_dir_opt;
+                    } else {
+                        std::cerr << "cd: No such directory or access failed\n";
                     }
                 }
-
                 
             } else if (cmd == "touch") {
                 std::cin >> std::ws; 
                 std::getline(std::cin, dirname);
-                try {
-                    FS.create_file(dir_id, dirname.c_str());
-                } catch (const std::exception& e) {
-                    std::cerr << e.what() << "\n";
+                if (!FS.create_file(dir_id, dirname.c_str())) {
+                    std::cerr << "touch: failed to create file\n";
                 }
+                
             } else if (cmd == "vim") {
                 std::cin >> std::ws; 
                 std::getline(std::cin, dirname);
 
-                bool ok = true;
-                u64 inode_id;
-                try {
-                    inode_id = FS.resolve_path(dir_id, dirname.c_str());
-                } catch (const std::invalid_argument& e) {
-                    std::cout << e.what() << "\n";
-                    ok = false;
-                } catch (const std::exception& e) {
-                    std::cerr << e.what() << "\n";
-                    ok = false;
-                }
-                if (ok) {
+                auto inode_opt = FS.resolve_path(dir_id, dirname.c_str());
+                if (inode_opt) {
                     std::cout << "VIM>> ";
                     char c;
                     std::string input;
-                    std::string exit; exit += ":wq";
+                    std::string exit_seq = ":wq";
+                    
                     while (std::cin.get(c)) {
                         input.push_back(c);
-                        if (input.size() >= 3 &&
-                            input.substr(input.size() - 3) == exit) {
+                        if (input.size() >= 3 && input.substr(input.size() - 3) == exit_seq) {
                             input.erase(input.size() - 3);
                             break;
                         }
                     }
-                    try {
-                        FS.write_file(inode_id, static_cast<const void*>(input.c_str()), input.size() ,0);
-                    } catch (const std::invalid_argument& e) {
-                        std::cout << e.what() << "\n";
-                        
-                    } catch (const std::exception& e) {
-                        std::cerr << e.what() << "\n";
+                    
+                    if (!FS.write_file(*inode_opt, static_cast<const void*>(input.c_str()), input.size(), 0)) {
+                        std::cerr << "vim: failed to write file\n";
                     }
+                } else {
+                    std::cerr << "vim: path not found or invalid\n";
                 }
 
             } else if (cmd == "cat") {
                 std::cin >> std::ws; 
                 std::getline(std::cin, dirname);
-                bool ok = true;
-                u64 inode_id;
-                std::vector<u8> data;
-                try {
-                    inode_id = FS.resolve_path(dir_id, dirname.c_str());
-                } catch (const std::invalid_argument& e) {
-                    std::cout << e.what() << "\n";
-                    ok = false;
-                } catch (const std::exception& e) {
-                    std::cerr << e.what() << "\n";
-                    ok = false;
-                }
-                if (ok){
-                    try {
-                        data  = FS.read_file(inode_id, 0);
-                    } catch (const std::invalid_argument& e) {
-                        std::cout << e.what() << "\n";
-                        ok = false;
-                        
-                    } catch (const std::exception& e) {
-                        std::cerr << e.what() << "\n";
-                        ok = false;
+                
+                auto inode_opt = FS.resolve_path(dir_id, dirname.c_str());
+                if (inode_opt) {
+                    auto data_opt = FS.read_file(*inode_opt, 0);
+                    if (data_opt) {
+                        std::cout << std::string(data_opt->begin(), data_opt->end()) << "\n";
+                    } else {
+                        std::cerr << "cat: failed to read file\n";
                     }
-                    if (ok){
-                        std::cout << std::string(data.begin(), data.end()) << "\n";
-                    }
+                } else {
+                    std::cerr << "cat: path not found or invalid\n";
                 }
+                
             } else if (cmd == "exit"){
-                std::cout << "Connection with " << argv[1] << " closed!" << std::endl;
+                std::cout << "Connection with " << argv[1] << " closed!\n";
                 return 0;
             } else {
-                std::cout << "Command not found!" << std::endl;
+                std::cout << "Command not found!\n";
             }
         }
     } catch (const std::exception& e) {
-        std::cerr << e.what() << "\n";
+        // Оставляем только для фатальных ошибок (например, падение при инициализации образа)
+        std::cerr << "Fatal error: " << e.what() << "\n";
         return 1;
     }
 
-    
     return 0;
 }

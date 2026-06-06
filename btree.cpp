@@ -4,20 +4,60 @@
 namespace btree {
 
 std::optional<Item> BTree::searchR(const Node& h, Key v, int ht) const {
+    // Защита от пустых узлов (на всякий случай, чтобы избежать int underflow ниже)
+    if (h.hdr_.nritems_ == 0) {
+        return std::nullopt;
+    }
+
     if (ht == 0) {
-        for(int i = 0; i < h.hdr_.nritems_; i++) {
-            if (v == h.item(i).key_) {
-                return h.item(i);
+        // ==========================================
+        // ЛИСТОВОЙ УЗЕЛ: Поиск точного совпадения
+        // ==========================================
+        int left = 0;
+        int right = h.hdr_.nritems_ - 1;
+
+        while (left <= right) {
+            int mid = left + (right - left) / 2;
+            Key mid_key = h.item(mid).key_;
+
+            if (v == mid_key) {
+                return h.item(mid);
+            } else if (v < mid_key) {
+                right = mid - 1;
+            } else {
+                left = mid + 1;
             }
         }
     } else {
-        for(int i = 0; i < h.hdr_.nritems_; i++) {
-            if (i + 1 == h.hdr_.nritems_ || v < h.ptr(i + 1).key_) {
-                Node next(fd, h.ptr(i).addr_); 
-                return searchR(next, v, ht - 1);
+        // ==========================================
+        // ВНУТРЕННИЙ УЗЕЛ: Поиск нужного потомка
+        // ==========================================
+        int left = 0;
+        int right = h.hdr_.nritems_ - 1;
+        
+        // По умолчанию смотрим в самый левый child, 
+        // если искомый ключ меньше всех ключей в текущем узле
+        int match_idx = 0; 
+
+        while (left <= right) {
+            int mid = left + (right - left) / 2;
+            Key mid_key = h.ptr(mid).key_;
+
+            // Если искомый ключ меньше ключа указателя, значит идем влево
+            if (v < mid_key) {
+                right = mid - 1;
+            } else {
+                // Если ключ больше или равен, это потенциальный кандидат.
+                // Сохраняем его индекс и продолжаем искать правее (вдруг есть еще ближе).
+                match_idx = mid;
+                left = mid + 1;
             }
         }
+
+        Node next(fd, h.ptr(match_idx).addr_); 
+        return searchR(next, v, ht - 1);
     }
+    
     return std::nullopt;
 }
 
@@ -62,48 +102,60 @@ KeyPtr BTree::split(Node& h, u64 addr) {
 }
 
 std::optional<KeyPtr> BTree::insertR(Node& h, const Item& x, int ht, u64 current_blk_addr) {
+    u32 n = h.hdr_.nritems_;
     u32 i = 0;
 
-    if (ht == 0) {
-        for (; i < h.hdr_.nritems_; i++) {
-            if (x.key_ < h.item(i).key_) break;
-        }
-        
-        for (u32 j = h.hdr_.nritems_; j > i; j--) {
-            h.item(j) = h.item(j - 1);
-        }
-        
-        h.item(i) = x;
-        h.hdr_.nritems_++;
+    // 1. Бинарный поиск позиции вставки
+    int left = 0;
+    int right = n - 1;
+    u32 insert_pos = n; // По умолчанию вставляем в конец
 
-    } else {
-        for (; i < h.hdr_.nritems_; i++) {
-            if ((i + 1 == h.hdr_.nritems_) || x.key_ < h.ptr(i + 1).key_) {
-                
-                u64 child_addr = h.ptr(i).addr_;
-                Node next(fd, child_addr);
+    while (left <= right) {
+        int mid = left + (right - left) / 2;
+        Key mid_key = (ht == 0) ? h.item(mid).key_ : h.ptr(mid).key_;
 
-                auto split_child = insertR(next, x, ht - 1, child_addr);
-
-                lseek(fd, child_addr, SEEK_SET);
-                write(fd, &next, BLOCK_SIZE);
-
-                if (split_child.has_value()) {
-                    u32 insert_pos = i + 1;
-                    
-                    for (u32 j = h.hdr_.nritems_; j > insert_pos; j--) {
-                        h.ptr(j) = h.ptr(j - 1);
-                    }
-                    h.ptr(insert_pos) = split_child.value();
-                    h.hdr_.nritems_++;
-                }
-                break;
-            }
+        if (x.key_ < mid_key) {
+            insert_pos = mid;
+            right = mid - 1;
+        } else {
+            left = mid + 1;
         }
     }
 
+    if (ht == 0) {
+        // ЛИСТОВОЙ УЗЕЛ: Сдвигаем элементы и вставляем
+        for (u32 j = n; j > insert_pos; j--) {
+            h.item(j) = h.item(j - 1);
+        }
+        h.item(insert_pos) = x;
+        h.hdr_.nritems_++;
+
+    } else {
+        // ВНУТРЕННИЙ УЗЕЛ
+        // Если insert_pos == 0, мы должны идти в самый левый child.
+        // Иначе мы идем в child, который находится перед insert_pos (т.е. insert_pos - 1).
+        u32 target_idx = (insert_pos > 0) ? insert_pos - 1 : 0;
+        
+        u64 child_addr = h.ptr(target_idx).addr_;
+        Node next(fd, child_addr);
+
+        auto split_child = insertR(next, x, ht - 1, child_addr);
+
+        lseek(fd, child_addr, SEEK_SET);
+        write(fd, &next, BLOCK_SIZE);
+
+        if (split_child.has_value()) {
+            // Если потомок разделился, вставляем новый KeyPtr в текущий узел
+            for (u32 j = n; j > insert_pos; j--) {
+                h.ptr(j) = h.ptr(j - 1);
+            }
+            h.ptr(insert_pos) = split_child.value();
+            h.hdr_.nritems_++;
+        }
+    }
+
+    // Сохранение узла или вызов split
     u32 max_capacity = (ht == 0) ? ITEMS_SIZE : PTRS_SIZE;
-    
     if (h.hdr_.nritems_ < max_capacity) {
         lseek(fd, current_blk_addr, SEEK_SET);
         write(fd, &h, BLOCK_SIZE);
@@ -112,7 +164,6 @@ std::optional<KeyPtr> BTree::insertR(Node& h, const Item& x, int ht, u64 current
         return split(h, current_blk_addr);
     }
 }
-
 
 std::optional<Item> BTree::search(Key key) const {
     return searchR(root, key, root.hdr_.level_);
@@ -147,7 +198,13 @@ void BTree::insert(Item item) {
         
         lseek(fd, root_addr, SEEK_SET);
         write(fd, &root, BLOCK_SIZE);
+
+
+        lseek(fd, 0, SEEK_SET);
+        write(fd, &sb, sizeof(fs::SuperBlock));
     }
+
+
 }
 
 

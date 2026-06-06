@@ -29,6 +29,11 @@ mkfs: $(MKFS_TARGET)
 
 fuse: $(FUSE_TARGET)
 
+a: 
+	make 
+	make fuse
+	make mkfs
+
 $(MAIN_TARGET): $(MAIN_OBJS)
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
@@ -58,4 +63,4 @@ fs:
 	./mkfs.minibtrfs fs 40960
 
 
-.PHONY: all mkfs clean fuse
+.PHONY: all mkfs clean fuse a

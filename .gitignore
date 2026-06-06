@@ -6,3 +6,4 @@ mkfs.minibtrfs
 btfs
 repl
 *.img
+disk
