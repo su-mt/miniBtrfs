@@ -165,6 +165,10 @@ struct [[gnu::packed]] DirItem {
 struct [[gnu::packed]] DirIndex {
     btree::Key start;
     u64 cnt;
+
+    DirIndex () {
+        std::memset(this, 0, sizeof(DirIndex));
+    }
 };
 
 

@@ -1,5 +1,6 @@
 #include "minibtrfs.hpp"
 #include "fs.hpp"
+#include <iostream>
 #include <string>
 
 namespace minibtrfs {
@@ -40,11 +41,17 @@ void MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     write(fd, &dir_item, sizeof(fs::DirItem));
 
     btree::Item tree_dir_item;
-    tree_dir_item.key_ = btree::Key{parent_id, btree::Type::DIR_ITEM, current_offset};
-    tree_dir_item.data_offset_ = dir_item_addr;
+
+    // Ключ должен быть: {parent_id, DIR_ITEM, 0} -> {parent_id, DIR_ITEM, 1}
+    tree_dir_item.key_ = btree::Key{parent_id, btree::Type::DIR_ITEM, current_offset}; 
+    tree_dir_item.data_offset_ = dir_item_addr; // ВОТ ЗДЕСЬ должен быть адрес данных
     tree_dir_item.data_size_ = sizeof(fs::DirItem);
     tree.insert(tree_dir_item);
 
+    std::cerr << "[DEBUG] Inserted DirItem for key: (" 
+          << tree_dir_item.key_.id_ << ", " 
+          << (int)tree_dir_item.key_.type_ << ", " 
+          << tree_dir_item.key_.offset_ << ")" << std::endl;
 
     // ====================================================================
     // ШАГ 2: Создаем саму новую директорию (Внутренности new_id)
@@ -118,6 +125,7 @@ void MiniBtrfs::ls(u64 dir_id) {
         return;
     }
 
+    std::cout << "SIZE=" << p_index.cnt << std::endl;
     std::cout << "ID\tTYPE\tSIZE\tNAME\n";
     std::cout << "------------------------------------\n";
 
@@ -126,7 +134,7 @@ void MiniBtrfs::ls(u64 dir_id) {
         auto dir_tree_item = tree.search(btree::Key{dir_id, btree::Type::DIR_ITEM, i});
         if (!dir_tree_item) {
             std::string err = "ls: Warning! Missing DirItem at index "; err += i;
-            throw std::runtime_error(err);
+            //throw std::runtime_error(err);
             continue;
         }
 
