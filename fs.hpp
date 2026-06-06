@@ -130,6 +130,7 @@ struct [[gnu::packed]] InodeItem {
     u64 size; //bytes
     InodeType mode;
 
+    InodeItem () = default;
     InodeItem (InodeType type) : mode(type) {
         // TODO: 
         size = 0;

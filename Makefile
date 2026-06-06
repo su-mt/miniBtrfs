@@ -2,9 +2,9 @@
 CXX      := g++
 CXXFLAGS := -std=c++20   -O2 -g
 
-TARGET   := mkfs.minibtrfs
+TARGET   := main
 
-SRCS     := mkfs.minibtrfs.cc btree.cpp
+SRCS     := main.cc btree.cpp minibtrfs.cpp
 OBJS     := $(SRCS:.cc=.o)
 OBJS     := $(OBJS:.cpp=.o)
 

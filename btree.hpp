@@ -103,11 +103,31 @@ class BTree {
 
     KeyPtr split(Node& h, u64 addr) ;
 
+
+
 public:
+
     std::optional<Item> search(Key key) ;
     void insert(Item item);
 
+    BTree () = delete;
     BTree (fs::SuperBlock sb, btree::Node root, int fd) : sb(sb), root(root), fd(fd) {}
+    BTree (int fd) : fd(fd) { load();}
+
+    inline void load() {
+        read(fd, &sb, sizeof(sb));
+        lseek(fd, sb.root_tree_root_, SEEK_SET);
+        read(fd, &root, sizeof(root));
+    }
+    inline void load(int fd) {
+        this->fd = fd;
+        read(fd, &sb, sizeof(sb));
+        lseek(fd, sb.root_tree_root_, SEEK_SET);
+        read(fd, &root, sizeof(root));
+    }
+
+    inline const auto& getSuperBlock () {return sb; }
+    inline const auto& getRootNode () { return root;}
 
 };
 
