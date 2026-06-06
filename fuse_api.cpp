@@ -6,7 +6,6 @@
 #include <errno.h>
 #include <iostream>
 #include <string>
-#include <algorithm>
 #include <vector>
 #include <optional>
 
@@ -168,19 +167,25 @@ static int mb_read(const char *path, char *buf, size_t size, off_t offset,
         return -ENOENT;
     }
     
-    auto data_opt = fs->read_file(*inode_id_opt, offset);
+    auto data_opt = fs->read_file(inode_id_opt.value(), offset, size);
+    
+    // 1. Проверяем именно ошибку (если метод вернул std::nullopt)
     if (!data_opt) {
-        LOG_FUSE("read: failed to read data");
+        LOG_FUSE("read: critical error reading data from tree");
         return -EIO;
     }
     
-    size_t bytes_to_copy = std::min((size_t)size, data_opt->size());
-    if (bytes_to_copy > 0) {
-        memcpy(buf, data_opt->data(), bytes_to_copy);
+    // 2. Если вектор пустой — это нормальный честный EOF. Возвращаем 0.
+    if (data_opt->empty()) {
+        LOG_FUSE("read: reach EOF at offset " << offset);
+        return 0; 
     }
     
-    return bytes_to_copy; 
+    // 3. Копируем данные, если они есть
+    memcpy(buf, data_opt->data(), data_opt->size());
+    return (int)data_opt->size(); 
 }
+
 
 // ---------------------------------------------------------
 // Запись данных в файл (echo, >)

@@ -114,11 +114,26 @@ int main(int argc, char** argv)
                 
                 auto inode_opt = FS.resolve_path(dir_id, dirname.c_str());
                 if (inode_opt) {
-                    auto data_opt = FS.read_file(*inode_opt, 0);
-                    if (data_opt) {
-                        std::cout << std::string(data_opt->begin(), data_opt->end()) << "\n";
-                    } else {
-                        std::cerr << "cat: failed to read file\n";
+                    auto inode_meta = FS.get_inode(*inode_opt);
+                    if (!inode_meta) {
+                        std::cerr << "cat: cannot access metadata for " << dirname << "\n";
+                        continue;
+                    }
+
+                    if (inode_meta->isDir()) {
+                        std::cerr << "cat: " << dirname << ": Is a directory\n";
+                        continue;
+                    }
+                    if (inode_meta->size == 0) {
+                        continue; 
+                    }
+                    auto data_opt = FS.read_file(*inode_opt, 0, inode_meta->size);
+                    if (data_opt && !data_opt->empty()) {
+                        // Выводим сырые байты файла прямо в stdout
+                        std::cout.write(reinterpret_cast<const char*>(data_opt->data()), data_opt->size());
+                        std::cout << std::flush;
+                    } else if (!data_opt) {
+                        std::cerr << "cat: error reading " << dirname << "\n";
                     }
                 } else {
                     std::cerr << "cat: path not found or invalid\n";

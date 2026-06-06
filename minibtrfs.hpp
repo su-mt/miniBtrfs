@@ -37,7 +37,7 @@ public:
     bool ls(u64 dir_id);
     bool create_file(u64 parent_id, const char* name);
     bool write_file(u64 inode_id, const void* data, size_t size, off_t offset);
-    std::optional<std::vector<u8>> read_file(u64 inode_id, off_t offset) const ;
+    std::optional<std::vector<u8>> read_file(u64 inode_id, off_t offset, size_t size_requested) const ;
     [[nodiscard]] std::optional<u64> resolve_path(u64 current_dir_id, const char* path) const;
     [[nodiscard]] std::optional<u64> cd(u64 current_dir_id, const char* name) const;
     void truncate(u64 inode_id, off_t new_size);

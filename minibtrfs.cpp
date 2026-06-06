@@ -409,7 +409,10 @@ bool MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t of
     return current_id;
 }
 
-std::optional<std::vector<u8>> MiniBtrfs::read_file(u64 inode_id, off_t offset) const {
+// Не забудь обновить сигнатуру в minibtrfs.hpp:
+// std::optional<std::vector<u8>> read_file(u64 inode_id, off_t offset, size_t size_requested) const;
+
+std::optional<std::vector<u8>> MiniBtrfs::read_file(u64 inode_id, off_t offset, size_t size_requested) const {
     auto inode_item = tree.search(btree::Key{inode_id, btree::Type::INODE_ITEM, 0});
     if (!inode_item) {
         LOG_BTRFS("read_file: Inode not found!");
@@ -421,36 +424,65 @@ std::optional<std::vector<u8>> MiniBtrfs::read_file(u64 inode_id, off_t offset) 
     read(fd, &inode, sizeof(fs::InodeItem));
 
     if (offset >= inode.size) {
-        return std::vector<u8>(); 
+        return std::vector<u8>(); // Настоящий честный EOF
     }
 
-    size_t bytes_to_read = inode.size - offset;
-    std::vector<u8> buffer(bytes_to_read);
+    // Ограничиваем запрос концом файла, чтобы не читать лишний мусор
+    size_t total_to_read = std::min(size_requested, (size_t)(inode.size - offset));
+    
+    // Выделяем буфер сразу нужного размера и забиваем нулями
+    // (нули останутся на местах "дыр" / sparse extents)
+    std::vector<u8> result(total_to_read, 0); 
 
-    auto inline_ext = tree.search(btree::Key{inode_id, btree::Type::EXTENT_INLINE, (u64)offset});
+    // ПУТЬ А: INLINE (Файл целиком лежит в метаданных)
+    auto inline_ext = tree.search(btree::Key{inode_id, btree::Type::EXTENT_INLINE, 0});
     if (inline_ext) {
-        lseek(fd, inline_ext->data_offset_, SEEK_SET);
-        read(fd, buffer.data(), bytes_to_read);
-        
-        LOG_BTRFS("Read INLINE extent for Inode " << inode_id);
-        return buffer;
+        lseek(fd, inline_ext->data_offset_ + offset, SEEK_SET);
+        read(fd, result.data(), total_to_read);
+        LOG_BTRFS("Read INLINE extent (size: " << total_to_read << ")");
+        return result;
     }
 
-    auto reg_ext = tree.search(btree::Key{inode_id, btree::Type::EXTENT_DATA, (u64)offset});
-    if (!reg_ext) {
-        LOG_BTRFS("read_file: Extent missing or file is sparse / corrupted");
-        return std::nullopt;
+    // ПУТЬ Б: REGULAR (Чтение блоков в цикле)
+    off_t current_offset = offset;
+    size_t bytes_left = total_to_read;
+    u8* out_ptr = result.data(); // Указатель для записи в результирующий вектор
+
+    while (bytes_left > 0) {
+        u64 extent_start = (current_offset / BLOCK_SIZE) * BLOCK_SIZE;
+        u64 offset_in_block = current_offset % BLOCK_SIZE;
+
+        auto reg_ext = tree.search(btree::Key{inode_id, btree::Type::EXTENT_DATA, extent_start});
+
+        // Сколько максимум можно прочитать из текущего 4K блока
+        size_t chunk_size = std::min(bytes_left, (size_t)(BLOCK_SIZE - offset_in_block));
+
+        if (reg_ext) {
+            fs::Extentdata ext_item;
+            lseek(fd, reg_ext->data_offset_, SEEK_SET);
+            read(fd, &ext_item, sizeof(fs::Extentdata));
+
+            // Если размер записанного экстента больше смещения, читаем реальные данные
+            if (ext_item.size > offset_in_block) {
+                size_t valid_bytes = std::min(chunk_size, (size_t)(ext_item.size - offset_in_block));
+                lseek(fd, ext_item.block_addr + offset_in_block, SEEK_SET);
+                
+                // Читаем напрямую в нужный участок выделенного вектора
+                read(fd, out_ptr, valid_bytes); 
+            }
+        } else {
+            // Экстент не найден. Поскольку мы заранее забили result нулями, 
+            // мы просто логируем это как sparse hole и ничего не читаем с диска.
+            LOG_BTRFS("read_file: Sparse hole implicitly filled with zeros at offset " << extent_start);
+        }
+
+        current_offset += chunk_size;
+        out_ptr += chunk_size;
+        bytes_left -= chunk_size;
     }
 
-    fs::Extentdata ext_item;
-    lseek(fd, reg_ext->data_offset_, SEEK_SET);
-    read(fd, &ext_item, sizeof(fs::Extentdata));
-
-    lseek(fd, ext_item.block_addr, SEEK_SET);
-    read(fd, buffer.data(), bytes_to_read);
-
-    LOG_BTRFS("Read REGULAR extent at physical addr " << ext_item.block_addr);
-    return buffer;
+    LOG_BTRFS("Read REGULAR multi-extent file (total size: " << total_to_read << ")");
+    return result;
 }
 
 std::optional<std::vector<std::string>> MiniBtrfs::get_dir_entries(u64 dir_id) const {
