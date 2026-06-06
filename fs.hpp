@@ -126,15 +126,17 @@ struct [[gnu::packed]] SuperBlock {
         next_free_block_ += BLOCK_SIZE;
         
     
-        lseek(fd, 0, SEEK_SET); 
-        write(fd, this, sizeof(fs::SuperBlock));
+        //lseek(fd, 0, SEEK_SET); 
+        //write(fd, this, sizeof(fs::SuperBlock));
+        pwrite(fd, this, sizeof(fs::SuperBlock), 0);    
         return addr;
     }
 
     inline u64 allocate_inode(int fd) const {
         u64 id = next_inode_id_++;
-        lseek(fd, 0, SEEK_SET); 
-        write(fd, this, sizeof(fs::SuperBlock));
+        //lseek(fd, 0, SEEK_SET); 
+        //write(fd, this, sizeof(fs::SuperBlock));
+        pwrite(fd, this, sizeof(fs::SuperBlock), 0);
         return id;
     }
 };

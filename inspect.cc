@@ -27,8 +27,9 @@ int main(int argc, char** argv) {
 
     // 2. Идем по адресу корня и читаем узел дерева
     btree::Node root;
-    lseek(fd, sb.root_tree_root_, SEEK_SET);
-    read(fd, &root, BLOCK_SIZE);
+    //lseek(fd, sb.root_tree_root_, SEEK_SET);
+    //read(fd, &root, BLOCK_SIZE);
+    pread(fd, &root, BLOCK_SIZE, sb.root_tree_root_);
 
     std::cout << "=== ROOT NODE ===\n";
     std::cout << "Level: " << (int)root.hdr_.level_ << "\n";

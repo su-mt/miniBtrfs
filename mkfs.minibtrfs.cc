@@ -28,19 +28,20 @@ int main (int argc, char** argv) {
     fs::SuperBlock sb;
     btree::Node root(sb.fsid_, 0);
 
-    lseek(fd, sb.bytenr_, SEEK_SET);
-    write(fd, &sb, sizeof(fs::SuperBlock));
+    pwrite(fd, &sb, sizeof(fs::SuperBlock), sb.bytenr_);
 
-    lseek(fd, sb.root_tree_root_, SEEK_SET);
-    write(fd, &root, BLOCK_SIZE);
+    //lseek(fd, sb.root_tree_root_, SEEK_SET);
+    //write(fd, &root, BLOCK_SIZE);
+    pwrite(fd, &root, BLOCK_SIZE, sb.root_tree_root_);
 
 
     fs::InodeItem root_inode(fs::InodeType::Dir);
     u64 root_inode_addr = sb.allocate_block(fd);
 
-    lseek(fd, root_inode_addr, SEEK_SET);
-    write(fd, &root_inode, sizeof(fs::InodeItem));
-    
+    //lseek(fd, root_inode_addr, SEEK_SET);
+    //write(fd, &root_inode, sizeof(fs::InodeItem));
+    pwrite(fd, &root_inode, sizeof(fs::InodeItem), root_inode_addr);
+
     btree::Item inode_tree_item;
     inode_tree_item.key_ = btree::Key{256, btree::Type::INODE_ITEM, 0};
     inode_tree_item.data_offset_ = root_inode_addr;
@@ -56,8 +57,9 @@ int main (int argc, char** argv) {
     std::memcpy(root_inode_ref.name, "/", 2);
 
     u64 ref_addr = sb.allocate_block(fd);
-    lseek(fd, ref_addr, SEEK_SET);
-    write(fd, &root_inode_ref, sizeof(fs::InodeRef));
+    //lseek(fd, ref_addr, SEEK_SET);
+    //write(fd, &root_inode_ref, sizeof(fs::InodeRef));
+    pwrite(fd, &root_inode_ref, sizeof(fs::InodeRef), ref_addr);
 
     btree::Item ref_tree_item;
     ref_tree_item.key_ = btree::Key{256, btree::Type::INODE_REF, 256};
@@ -77,8 +79,9 @@ int main (int argc, char** argv) {
     u64 index_addr = sb.allocate_block(fd);
     
     // Записываем DirIndex на диск
-    lseek(fd, index_addr, SEEK_SET);
-    write(fd, &root_dir_index, sizeof(fs::DirIndex));
+    //lseek(fd, index_addr, SEEK_SET);
+    //write(fd, &root_dir_index, sizeof(fs::DirIndex));
+    pwrite(fd, &root_dir_index, sizeof(fs::DirIndex), index_addr);
 
     // 4. Вставляем DIR_INDEX в B-дерево
     btree::Item index_tree_item;

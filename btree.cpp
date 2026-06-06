@@ -91,11 +91,15 @@ KeyPtr BTree::split(Node& h, u64 addr) {
 
     u64 right_node_addr = sb.allocate_block(fd);
 
-    lseek(fd, addr, SEEK_SET);
-    write(fd, &h, BLOCK_SIZE);
+    //lseek(fd, addr, SEEK_SET);
+    //write(fd, &h, BLOCK_SIZE);
 
-    lseek(fd, right_node_addr, SEEK_SET);
-    write(fd, &right_node, BLOCK_SIZE);
+    pwrite(fd, &h, BLOCK_SIZE, addr);
+
+    //lseek(fd, right_node_addr, SEEK_SET);
+    //write(fd, &right_node, BLOCK_SIZE);
+
+    pwrite(fd, &right_node, BLOCK_SIZE, right_node_addr);
 
     Key up_key = right_node.is_item() ? right_node.item(0).key_ : right_node.ptr(0).key_;
     return KeyPtr{up_key, right_node_addr, 1};
@@ -141,8 +145,9 @@ std::optional<KeyPtr> BTree::insertR(Node& h, const Item& x, int ht, u64 current
 
         auto split_child = insertR(next, x, ht - 1, child_addr);
 
-        lseek(fd, child_addr, SEEK_SET);
-        write(fd, &next, BLOCK_SIZE);
+        //lseek(fd, child_addr, SEEK_SET);
+        //write(fd, &next, BLOCK_SIZE);
+        pwrite(fd, &next, BLOCK_SIZE, child_addr);
 
         if (split_child.has_value()) {
             // Если потомок разделился, вставляем новый KeyPtr в текущий узел
@@ -157,8 +162,9 @@ std::optional<KeyPtr> BTree::insertR(Node& h, const Item& x, int ht, u64 current
     // Сохранение узла или вызов split
     u32 max_capacity = (ht == 0) ? ITEMS_SIZE : PTRS_SIZE;
     if (h.hdr_.nritems_ < max_capacity) {
-        lseek(fd, current_blk_addr, SEEK_SET);
-        write(fd, &h, BLOCK_SIZE);
+        //lseek(fd, current_blk_addr, SEEK_SET);
+        //write(fd, &h, BLOCK_SIZE);
+        pwrite(fd, &h, BLOCK_SIZE, current_blk_addr);
         return std::nullopt;
     } else {
         return split(h, current_blk_addr);
@@ -178,9 +184,10 @@ void BTree::insert(Item item) {
         u64 left_child_addr = sb.allocate_block(fd);
         Node left_node = root;
         
-        lseek(fd, left_child_addr, SEEK_SET);
-        write(fd, &left_node, BLOCK_SIZE);
-        
+        //lseek(fd, left_child_addr, SEEK_SET);
+        //write(fd, &left_node, BLOCK_SIZE);
+        pwrite(fd, &left_node, BLOCK_SIZE, left_child_addr);
+
         //std::memcpy(saved_fsid, root.hdr_.fsid_, 16);
         fs::uuid_t saved_fsid = root.hdr_.fsid_;
         u8 new_level = root.hdr_.level_ + 1; 
@@ -196,12 +203,14 @@ void BTree::insert(Item item) {
         root.ptr(0) = KeyPtr{left_key, left_child_addr, 1};
         root.ptr(1) = split_child.value();
         
-        lseek(fd, root_addr, SEEK_SET);
-        write(fd, &root, BLOCK_SIZE);
+        //lseek(fd, root_addr, SEEK_SET);
+        //write(fd, &root, BLOCK_SIZE);
+        pwrite(fd, &root, BLOCK_SIZE, root_addr);
 
 
-        lseek(fd, 0, SEEK_SET);
-        write(fd, &sb, sizeof(fs::SuperBlock));
+        //lseek(fd, 0, SEEK_SET);
+        //write(fd, &sb, sizeof(fs::SuperBlock));
+        pwrite(fd, &sb, sizeof(fs::SuperBlock), 0);
     }
 
 

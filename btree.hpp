@@ -58,8 +58,9 @@ struct [[gnu::packed]] Node {
     }
 
     Node(int fd, u64 addr) {
-        lseek(fd, addr, SEEK_SET);
-        read(fd, this, BLOCK_SIZE);
+        //lseek(fd, addr, SEEK_SET);
+        //read(fd, this, BLOCK_SIZE);
+        pread(fd, this, BLOCK_SIZE, addr);
     }
 
     Node (fs::uuid_t uuid, int level) : hdr_(uuid, level)  {
@@ -117,14 +118,16 @@ public:
 
     inline void load() {
         read(fd, &sb, sizeof(sb));
-        lseek(fd, sb.root_tree_root_, SEEK_SET);
-        read(fd, &root, sizeof(root)); 
+        // lseek(fd, sb.root_tree_root_, SEEK_SET);
+        // read(fd, &root, sizeof(root)); 
+        pread(fd, &root, sizeof(root), sb.root_tree_root_);
     }
     inline void load(int fd) {
         this->fd = fd;
         read(fd, &sb, sizeof(sb));
-        lseek(fd, sb.root_tree_root_, SEEK_SET);
-        read(fd, &root, sizeof(root));
+        // lseek(fd, sb.root_tree_root_, SEEK_SET);
+        // read(fd, &root, sizeof(root));
+        pread(fd, &root, sizeof(root), sb.root_tree_root_);
     }
 
     inline const auto& getSuperBlock () {return sb; }

@@ -31,14 +31,17 @@ bool MiniBtrfs::mkdir(u64 parent_id, const char* name) {
 
     // 1.2 Читаем девайс, обновляем счетчик и пишем обратно (in-place update)
     fs::DirIndex p_index;
-    lseek(fd, parent_index_item->data_offset_, SEEK_SET);
-    read(fd, &p_index, sizeof(fs::DirIndex));
+    //lseek(fd, parent_index_item->data_offset_, SEEK_SET);
+    //read(fd, &p_index, sizeof(fs::DirIndex));
+    pread(fd, &p_index, sizeof(fs::DirIndex), parent_index_item->data_offset_);
     
     u64 current_offset = p_index.cnt; 
     p_index.cnt++;                    
     
-    lseek(fd, parent_index_item->data_offset_, SEEK_SET);
-    write(fd, &p_index, sizeof(fs::DirIndex)); 
+    //lseek(fd, parent_index_item->data_offset_, SEEK_SET);
+    //write(fd, &p_index, sizeof(fs::DirIndex));
+    pwrite(fd, &p_index, sizeof(fs::DirIndex), parent_index_item->data_offset_);
+
 
     // 1.3 Вставляем DirItem (ссылка в родителе на новую папку)
     fs::DirItem dir_item;
@@ -47,8 +50,10 @@ bool MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     std::strncpy((char*)dir_item.name, name, fs::MAX_NAME_SIZE);
     
     u64 dir_item_addr = tree.getSuperBlock().allocate_block(fd);
-    lseek(fd, dir_item_addr, SEEK_SET);
-    write(fd, &dir_item, sizeof(fs::DirItem));
+    //lseek(fd, dir_item_addr, SEEK_SET);
+    //write(fd, &dir_item, sizeof(fs::DirItem));
+    pwrite(fd, &dir_item, sizeof(fs::DirItem), dir_item_addr);
+
 
     btree::Item tree_dir_item;
     tree_dir_item.key_ = btree::Key{parent_id, btree::Type::DIR_ITEM, current_offset}; 
@@ -66,9 +71,10 @@ bool MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     // 2.1 Создаем InodeItem
     fs::InodeItem new_inode(fs::InodeType::Dir);
     u64 inode_addr = tree.getSuperBlock().allocate_block(fd);
-    lseek(fd, inode_addr, SEEK_SET);
-    write(fd, &new_inode, sizeof(fs::InodeItem));
-    
+    //lseek(fd, inode_addr, SEEK_SET);
+    //write(fd, &new_inode, sizeof(fs::InodeItem));
+    pwrite(fd, &new_inode, sizeof(fs::InodeItem), inode_addr);
+
     btree::Item inode_tree_item;
     inode_tree_item.key_ = btree::Key{new_id, btree::Type::INODE_ITEM, 0};
     inode_tree_item.data_offset_ = inode_addr;
@@ -82,8 +88,9 @@ bool MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     std::strncpy((char*)new_inode_ref.name, name, fs::MAX_NAME_SIZE);
 
     u64 ref_addr = tree.getSuperBlock().allocate_block(fd);
-    lseek(fd, ref_addr, SEEK_SET);
-    write(fd, &new_inode_ref, sizeof(fs::InodeRef));
+    //lseek(fd, ref_addr, SEEK_SET);
+    //write(fd, &new_inode_ref, sizeof(fs::InodeRef));
+    pwrite(fd, &new_inode_ref, sizeof(fs::InodeRef), ref_addr);
 
     btree::Item ref_tree_item;
     ref_tree_item.key_ = btree::Key{new_id, btree::Type::INODE_REF, parent_id}; 
@@ -98,8 +105,9 @@ bool MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     new_dir_index.start = btree::Key{new_id, btree::Type::DIR_ITEM, 0}; 
 
     u64 index_addr = tree.getSuperBlock().allocate_block(fd);
-    lseek(fd, index_addr, SEEK_SET);
-    write(fd, &new_dir_index, sizeof(fs::DirIndex));
+    //lseek(fd, index_addr, SEEK_SET);
+    //write(fd, &new_dir_index, sizeof(fs::DirIndex));
+    pwrite(fd, &new_dir_index, sizeof(fs::DirIndex), index_addr);
 
     btree::Item index_tree_item;
     index_tree_item.key_ = btree::Key{new_id, btree::Type::DIR_INDEX, 0};
@@ -119,8 +127,9 @@ bool MiniBtrfs::ls(u64 dir_id) {
     }
 
     fs::DirIndex p_index;
-    lseek(fd, index_item->data_offset_, SEEK_SET);
-    read(fd, &p_index, sizeof(fs::DirIndex));
+    //lseek(fd, index_item->data_offset_, SEEK_SET);
+    //read(fd, &p_index, sizeof(fs::DirIndex));
+    pread(fd, &p_index, sizeof(fs::DirIndex), index_item->data_offset_);
 
     if (p_index.cnt == 0) {
         std::cout << "Directory " << dir_id << " is empty.\n";
@@ -139,8 +148,9 @@ bool MiniBtrfs::ls(u64 dir_id) {
         }
 
         fs::DirItem dir_item;
-        lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
-        read(fd, &dir_item, sizeof(fs::DirItem));
+        //lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
+        //read(fd, &dir_item, sizeof(fs::DirItem));
+        pread(fd, &dir_item, sizeof(fs::DirItem), dir_tree_item->data_offset_);
 
         auto inode_tree_item = tree.search(dir_item.location);
         
@@ -149,7 +159,10 @@ bool MiniBtrfs::ls(u64 dir_id) {
         
         if (inode_tree_item) {
             fs::InodeItem inode;
-            lseek(fd, inode_tree_item->data_offset_, SEEK_SET);
+            //lseek(fd, inode_tree_item->data_offset_, SEEK_SET);
+            //read(fd, &inode, sizeof(fs::InodeItem));
+            pread(fd, &inode, sizeof(fs::InodeItem), inode_tree_item->data_offset_);
+            
             read(fd, &inode, sizeof(fs::InodeItem));
             
             type_str = (inode.isDir()) ? "DIR " : "FILE";
@@ -169,16 +182,18 @@ bool MiniBtrfs::ls(u64 dir_id) {
     }
 
     fs::DirIndex p_index;
-    lseek(fd, index_item->data_offset_, SEEK_SET);
-    read(fd, &p_index, sizeof(fs::DirIndex));
+    //lseek(fd, index_item->data_offset_, SEEK_SET);
+    //read(fd, &p_index, sizeof(fs::DirIndex));
+    pread(fd, &p_index, sizeof(fs::DirIndex), index_item->data_offset_);
 
     for (u64 i = 0; i < p_index.cnt; i++) {
         auto dir_tree_item = tree.search(btree::Key{current_dir_id, btree::Type::DIR_ITEM, i});
         if (!dir_tree_item) continue;
 
         fs::DirItem dir_item;
-        lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
-        read(fd, &dir_item, sizeof(fs::DirItem));
+        //lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
+        //read(fd, &dir_item, sizeof(fs::DirItem));
+        pread(fd, &dir_item, sizeof(fs::DirItem), dir_tree_item->data_offset_);
 
         if (std::strcmp((const char*)dir_item.name, name) == 0) {
             auto inode_tree_item = tree.search(dir_item.location);
@@ -188,8 +203,9 @@ bool MiniBtrfs::ls(u64 dir_id) {
             }
             
             fs::InodeItem inode;
-            lseek(fd, inode_tree_item->data_offset_, SEEK_SET);
-            read(fd, &inode, sizeof(fs::InodeItem));
+            //lseek(fd, inode_tree_item->data_offset_, SEEK_SET);
+            //read(fd, &inode, sizeof(fs::InodeItem));
+            pread(fd, &inode, sizeof(fs::InodeItem), inode_tree_item->data_offset_);
 
             if (!inode.isDir()) {
                 LOG_BTRFS("cd: Not a directory");
@@ -213,14 +229,16 @@ bool MiniBtrfs::create_file(u64 parent_id, const char* name) {
     }
 
     fs::DirIndex p_index;
-    lseek(fd, parent_index_item->data_offset_, SEEK_SET);
-    read(fd, &p_index, sizeof(fs::DirIndex));
-    
+    //lseek(fd, parent_index_item->data_offset_, SEEK_SET);
+    //read(fd, &p_index, sizeof(fs::DirIndex));
+    pread(fd, &p_index, sizeof(fs::DirIndex), parent_index_item->data_offset_);
+
     u64 current_offset = p_index.cnt; 
     p_index.cnt++;                    
     
-    lseek(fd, parent_index_item->data_offset_, SEEK_SET);
-    write(fd, &p_index, sizeof(fs::DirIndex)); 
+    //lseek(fd, parent_index_item->data_offset_, SEEK_SET);
+    //write(fd, &p_index, sizeof(fs::DirIndex));
+    pwrite(fd, &p_index, sizeof(fs::DirIndex), parent_index_item->data_offset_);    
 
     fs::DirItem dir_item;
     std::memset(&dir_item, 0, sizeof(fs::DirItem));
@@ -228,8 +246,9 @@ bool MiniBtrfs::create_file(u64 parent_id, const char* name) {
     std::strncpy((char*)dir_item.name, name, fs::MAX_NAME_SIZE);
 
     u64 dir_item_addr = tree.getSuperBlock().allocate_block(fd);
-    lseek(fd, dir_item_addr, SEEK_SET);
-    write(fd, &dir_item, sizeof(fs::DirItem));
+    //lseek(fd, dir_item_addr, SEEK_SET);
+    //write(fd, &dir_item, sizeof(fs::DirItem));
+    pwrite(fd, &dir_item, sizeof(fs::DirItem), dir_item_addr);
 
     btree::Item tree_dir_item;
     tree_dir_item.key_ = btree::Key{parent_id, btree::Type::DIR_ITEM, current_offset};
@@ -244,8 +263,9 @@ bool MiniBtrfs::create_file(u64 parent_id, const char* name) {
     new_inode.mode = fs::InodeType::File; 
 
     u64 inode_addr = tree.getSuperBlock().allocate_block(fd);
-    lseek(fd, inode_addr, SEEK_SET);
-    write(fd, &new_inode, sizeof(fs::InodeItem));
+    //lseek(fd, inode_addr, SEEK_SET);
+    //write(fd, &new_inode, sizeof(fs::InodeItem));
+    pwrite(fd, &new_inode, sizeof(fs::InodeItem), inode_addr);
     
     btree::Item inode_tree_item;
     inode_tree_item.key_ = btree::Key{new_id, btree::Type::INODE_ITEM, 0};
@@ -260,8 +280,9 @@ bool MiniBtrfs::create_file(u64 parent_id, const char* name) {
     std::strncpy((char*)new_inode_ref.name, name, fs::MAX_NAME_SIZE);
 
     u64 ref_addr = tree.getSuperBlock().allocate_block(fd);
-    lseek(fd, ref_addr, SEEK_SET);
-    write(fd, &new_inode_ref, sizeof(fs::InodeRef));
+    //lseek(fd, ref_addr, SEEK_SET);
+    //write(fd, &new_inode_ref, sizeof(fs::InodeRef));
+    pwrite(fd, &new_inode_ref, sizeof(fs::InodeRef), ref_addr);
 
     btree::Item ref_tree_item;
     ref_tree_item.key_ = btree::Key{new_id, btree::Type::INODE_REF, parent_id}; 
@@ -294,13 +315,15 @@ bool MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t of
     }
 
     fs::InodeItem inode;
-    lseek(fd, inode_item->data_offset_, SEEK_SET);
-    read(fd, &inode, sizeof(fs::InodeItem));
+    //lseek(fd, inode_item->data_offset_, SEEK_SET);
+    //read(fd, &inode, sizeof(fs::InodeItem));
+    pread(fd, &inode, sizeof(fs::InodeItem), inode_item->data_offset_);
 
     if (offset == 0 && size <= btree::MAX_INLINE_SIZE) {
         u64 data_addr = tree.getSuperBlock().allocate_block(fd);
-        lseek(fd, data_addr, SEEK_SET);
-        write(fd, data, size);
+        //lseek(fd, data_addr, SEEK_SET);
+        //write(fd, data, size);
+        pwrite(fd, data, size, data_addr);
 
         btree::Item inline_item;
         inline_item.key_ = btree::Key{inode_id, btree::Type::EXTENT_INLINE, (u64)offset};
@@ -311,16 +334,18 @@ bool MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t of
         LOG_BTRFS("Wrote INLINE extent for Inode " << inode_id << " (size: " << size << ")");
     } else {
         u64 raw_data_block = tree.getSuperBlock().allocate_block(fd);
-        lseek(fd, raw_data_block, SEEK_SET);
-        write(fd, data, size);
+        //lseek(fd, raw_data_block, SEEK_SET);
+        //write(fd, data, size);
+        pwrite(fd, data, size, raw_data_block);
 
         fs::Extentdata ext_item;
         ext_item.block_addr = raw_data_block;
         ext_item.size = size;
 
         u64 ext_desc_addr = tree.getSuperBlock().allocate_block(fd);
-        lseek(fd, ext_desc_addr, SEEK_SET);
-        write(fd, &ext_item, sizeof(fs::Extentdata));
+        //lseek(fd, ext_desc_addr, SEEK_SET);
+        //write(fd, &ext_item, sizeof(fs::Extentdata));
+        pwrite(fd, &ext_item, sizeof(fs::Extentdata), ext_desc_addr);
 
         btree::Item tree_extent_item;
         tree_extent_item.key_ = btree::Key{inode_id, btree::Type::EXTENT_DATA, (u64)offset};
@@ -333,8 +358,9 @@ bool MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t of
 
     if (offset + size > inode.size) {
         inode.size = offset + size;
-        lseek(fd, inode_item->data_offset_, SEEK_SET);
-        write(fd, &inode, sizeof(fs::InodeItem));
+        //lseek(fd, inode_item->data_offset_, SEEK_SET);
+        //write(fd, &inode, sizeof(fs::InodeItem));
+        pwrite(fd, &inode, sizeof(fs::InodeItem), inode_item->data_offset_);
     }
 
     fsync(fd);
@@ -363,8 +389,9 @@ bool MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t of
         }
 
         fs::InodeItem inode;
-        lseek(fd, inode_item->data_offset_, SEEK_SET);
-        read(fd, &inode, sizeof(fs::InodeItem));
+        //lseek(fd, inode_item->data_offset_, SEEK_SET);
+        //read(fd, &inode, sizeof(fs::InodeItem));
+        pread(fd, &inode, sizeof(fs::InodeItem), inode_item->data_offset_);
 
         #if 0
         if (!inode.isDir()) { 
@@ -380,8 +407,9 @@ bool MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t of
         }
 
         fs::DirIndex p_index;
-        lseek(fd, index_item->data_offset_, SEEK_SET);
-        read(fd, &p_index, sizeof(fs::DirIndex));
+        //lseek(fd, index_item->data_offset_, SEEK_SET);
+        //read(fd, &p_index, sizeof(fs::DirIndex));
+        pread(fd, &p_index, sizeof(fs::DirIndex), index_item->data_offset_);
 
         bool found = false;
 
@@ -390,8 +418,10 @@ bool MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t of
             if (!dir_tree_item) continue;
 
             fs::DirItem dir_item;
-            lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
-            read(fd, &dir_item, sizeof(fs::DirItem));
+            //lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
+            //read(fd, &dir_item, sizeof(fs::DirItem));
+            pread(fd, &dir_item, sizeof(fs::DirItem), dir_tree_item->data_offset_);
+            //read(fd, &dir_item, sizeof(fs::DirItem));
 
             if (token == (const char*)dir_item.name) {
                 current_id = dir_item.location.id_;
@@ -420,8 +450,9 @@ std::optional<std::vector<u8>> MiniBtrfs::read_file(u64 inode_id, off_t offset, 
     }
 
     fs::InodeItem inode;
-    lseek(fd, inode_item->data_offset_, SEEK_SET);
-    read(fd, &inode, sizeof(fs::InodeItem));
+    //lseek(fd, inode_item->data_offset_, SEEK_SET);
+    //read(fd, &inode, sizeof(fs::InodeItem));
+    pread(fd, &inode, sizeof(fs::InodeItem), inode_item->data_offset_);
 
     if (offset >= inode.size) {
         return std::vector<u8>(); // Настоящий честный EOF
@@ -437,8 +468,9 @@ std::optional<std::vector<u8>> MiniBtrfs::read_file(u64 inode_id, off_t offset, 
     // ПУТЬ А: INLINE (Файл целиком лежит в метаданных)
     auto inline_ext = tree.search(btree::Key{inode_id, btree::Type::EXTENT_INLINE, 0});
     if (inline_ext) {
-        lseek(fd, inline_ext->data_offset_ + offset, SEEK_SET);
-        read(fd, result.data(), total_to_read);
+        //lseek(fd, inline_ext->data_offset_ + offset, SEEK_SET);
+        //read(fd, result.data(), total_to_read);
+        pread(fd, result.data(), total_to_read, inline_ext->data_offset_ + offset);
         LOG_BTRFS("Read INLINE extent (size: " << total_to_read << ")");
         return result;
     }
@@ -459,16 +491,16 @@ std::optional<std::vector<u8>> MiniBtrfs::read_file(u64 inode_id, off_t offset, 
 
         if (reg_ext) {
             fs::Extentdata ext_item;
-            lseek(fd, reg_ext->data_offset_, SEEK_SET);
-            read(fd, &ext_item, sizeof(fs::Extentdata));
+            //lseek(fd, reg_ext->data_offset_, SEEK_SET);
+            //read(fd, &ext_item, sizeof(fs::Extentdata));
+            pread(fd, &ext_item, sizeof(fs::Extentdata), reg_ext->data_offset_);
 
             // Если размер записанного экстента больше смещения, читаем реальные данные
             if (ext_item.size > offset_in_block) {
                 size_t valid_bytes = std::min(chunk_size, (size_t)(ext_item.size - offset_in_block));
-                lseek(fd, ext_item.block_addr + offset_in_block, SEEK_SET);
-                
-                // Читаем напрямую в нужный участок выделенного вектора
-                read(fd, out_ptr, valid_bytes); 
+                //lseek(fd, ext_item.block_addr + offset_in_block, SEEK_SET);
+                //read(fd, out_ptr, valid_bytes);
+                pread(fd, out_ptr, valid_bytes, ext_item.block_addr + offset_in_block);
             }
         } else {
             // Экстент не найден. Поскольку мы заранее забили result нулями, 
@@ -491,16 +523,18 @@ std::optional<std::vector<std::string>> MiniBtrfs::get_dir_entries(u64 dir_id) c
     if (!index_item) return std::nullopt; 
 
     fs::DirIndex p_index;
-    lseek(fd, index_item->data_offset_, SEEK_SET);
-    read(fd, &p_index, sizeof(fs::DirIndex));
+    //lseek(fd, index_item->data_offset_, SEEK_SET);
+    //read(fd, &p_index, sizeof(fs::DirIndex));
+    pread(fd, &p_index, sizeof(fs::DirIndex), index_item->data_offset_);
 
     for (u64 i = 0; i < p_index.cnt; i++) {
         auto dir_tree_item = tree.search(btree::Key{dir_id, btree::Type::DIR_ITEM, i});
         if (!dir_tree_item) continue;
         
         fs::DirItem dir_item;
-        lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
-        read(fd, &dir_item, sizeof(fs::DirItem));
+        //lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
+        //read(fd, &dir_item, sizeof(fs::DirItem));
+        pread(fd, &dir_item, sizeof(fs::DirItem), dir_tree_item->data_offset_);
         entries.push_back((char*)dir_item.name);
     }
     return entries;
@@ -514,8 +548,9 @@ std::optional<fs::InodeItem> MiniBtrfs::get_inode(u64 inode_id) const {
     }
     
     fs::InodeItem inode;
-    lseek(fd, item->data_offset_, SEEK_SET);
-    read(fd, &inode, sizeof(fs::InodeItem));
+    //lseek(fd, item->data_offset_, SEEK_SET);
+    //read(fd, &inode, sizeof(fs::InodeItem));
+    pread(fd, &inode, sizeof(fs::InodeItem), item->data_offset_);
     return inode;
 }
 
