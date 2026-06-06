@@ -41,6 +41,10 @@ public:
     u64 resolve_path(u64 current_dir_id, const char* path) const ;
     [[nodiscard]] u64 cd(u64 current_dir_id, const char* name) const;
 
+    // fuse api
+    fs::InodeItem get_inode(u64 inode_id) const ;
+    std::vector<std::string> get_dir_entries(u64 dir_id) const ;
+
     bool inspectFS();
 
 

@@ -532,4 +532,36 @@ std::vector<u8> MiniBtrfs::read_file(u64 inode_id, off_t offset) const {
     return buffer;
 }
 
+
+std::vector<std::string> MiniBtrfs::get_dir_entries(u64 dir_id) const {
+    std::vector<std::string> entries;
+    auto index_item = tree.search(btree::Key{dir_id, btree::Type::DIR_INDEX, 0});
+    if (!index_item) return entries; // Папка пуста
+
+    fs::DirIndex p_index;
+    lseek(fd, index_item->data_offset_, SEEK_SET);
+    read(fd, &p_index, sizeof(fs::DirIndex));
+
+    for (u64 i = 0; i < p_index.cnt; i++) {
+        auto dir_tree_item = tree.search(btree::Key{dir_id, btree::Type::DIR_ITEM, i});
+        if (!dir_tree_item) continue;
+        
+        fs::DirItem dir_item;
+        lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
+        read(fd, &dir_item, sizeof(fs::DirItem));
+        entries.push_back((char*)dir_item.name);
+    }
+    return entries;
+}
+
+fs::InodeItem MiniBtrfs::get_inode(u64 inode_id) const {
+    auto item = tree.search(btree::Key{inode_id, btree::Type::INODE_ITEM, 0});
+    if (!item) throw std::runtime_error("Inode not found");
+    
+    fs::InodeItem inode;
+    lseek(fd, item->data_offset_, SEEK_SET);
+    read(fd, &inode, sizeof(fs::InodeItem));
+    return inode;
+}
+
 } // minibtrfs
