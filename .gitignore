@@ -3,3 +3,6 @@ a.out
 fs
 main
 mkfs.minibtrfs
+btfs
+repl
+*.img
