@@ -3,7 +3,7 @@
 
 namespace btree {
 
-std::optional<Item> BTree::searchR(const Node& h, Key v, int ht) {
+std::optional<Item> BTree::searchR(const Node& h, Key v, int ht) const {
     if (ht == 0) {
         for(int i = 0; i < h.hdr_.nritems_; i++) {
             if (v == h.item(i).key_) {
@@ -114,7 +114,7 @@ std::optional<KeyPtr> BTree::insertR(Node& h, const Item& x, int ht, u64 current
 }
 
 
-std::optional<Item> BTree::search(Key key) {
+std::optional<Item> BTree::search(Key key) const {
     return searchR(root, key, root.hdr_.level_);
 }
 

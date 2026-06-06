@@ -169,33 +169,83 @@ void MiniBtrfs::ls(u64 dir_id) {
 }
 
 
+[[nodiscard]] u64 MiniBtrfs::cd(u64 current_dir_id, const char* name) const {
+    // 1. Получаем дескриптор текущей директории, чтобы узнать количество элементов
+    auto index_item = tree.search(btree::Key{current_dir_id, btree::Type::DIR_INDEX, 0});
+    if (!index_item) {
+        throw std::runtime_error("cd: Current directory metadata is corrupted or missing!");
+    }
+
+    fs::DirIndex p_index;
+    lseek(fd, index_item->data_offset_, SEEK_SET);
+    read(fd, &p_index, sizeof(fs::DirIndex));
+
+    // 2. Итерируемся по всем элементам папки в поиске нужного имени
+    for (u64 i = 0; i < p_index.cnt; i++) {
+        auto dir_tree_item = tree.search(btree::Key{current_dir_id, btree::Type::DIR_ITEM, i});
+        if (!dir_tree_item) {
+            continue; // Пропускаем "битые" записи, если они есть
+        }
+
+        fs::DirItem dir_item;
+        lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
+        read(fd, &dir_item, sizeof(fs::DirItem));
+
+        // 3. Сравниваем имена
+        if (std::strcmp((const char*)dir_item.name, name) == 0) {
+            
+            // Нашли! Теперь нужно убедиться, что это действительно директория, а не обычный файл
+            auto inode_tree_item = tree.search(dir_item.location);
+            if (inode_tree_item) {
+                fs::InodeItem inode;
+                lseek(fd, inode_tree_item->data_offset_, SEEK_SET);
+                read(fd, &inode, sizeof(fs::InodeItem));
+                
+
+                if (!inode.isDir()){
+                    throw std::invalid_argument("cd: Not a directory");
+                }
+            } else {
+                throw std::runtime_error("cd: Broken link (Inode missing)");
+            }
+            
+            // Успех. Возвращаем ID найденной папки
+            return dir_item.location.id_;
+        }
+    }
+
+    // Если цикл завершился, а совпадений нет
+    throw std::invalid_argument("cd: No such file or directory");
+}
+
+
 
 bool MiniBtrfs::inspectFS() {
 
-        const std::string expected_magic = "MINIBTFS";
+    const std::string expected_magic = "MINIBTFS";
 
-        auto sb = tree.getSuperBlock();
-        auto rootNode = tree.getRootNode();
+    auto sb = tree.getSuperBlock();
+    auto rootNode = tree.getRootNode();
 
-        std::string actual_magic(
-            reinterpret_cast<const char*>(sb.magic_), 8);
+    std::string actual_magic(
+        reinterpret_cast<const char*>(sb.magic_), 8);
 
-        if (actual_magic != expected_magic)
-            return false;
+    if (actual_magic != expected_magic)
+        return false;
 
-        // 2. BASIC SUPERBLOCK VALIDATION
-        if (sb.nodesize_ == 0)
-            return false;
+    // 2. BASIC SUPERBLOCK VALIDATION
+    if (sb.nodesize_ == 0)
+        return false;
 
-        if (sb.root_tree_root_ == 0)
-            return false;
+    if (sb.root_tree_root_ == 0)
+        return false;
 
-        // optional: sanity limit
-        if (sb.nodesize_ > (1 << 20))
-            return false;
+    // optional: sanity limit
+    if (sb.nodesize_ > (1 << 20))
+        return false;
 
 
-        return true;
+    return true;
 }
 
 

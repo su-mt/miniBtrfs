@@ -35,6 +35,7 @@ public:
 
     void mkdir (u64 parent_id, const char* name);
     void ls(u64 dir_id);
+    [[nodiscard]] u64 cd(u64 current_dir_id, const char* name) const;
 
     bool inspectFS();
 

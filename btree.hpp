@@ -98,7 +98,7 @@ class BTree {
     Node root;
     int fd;
 
-    std::optional<Item> searchR(const Node& h, Key v, int ht);
+    std::optional<Item> searchR(const Node& h, Key v, int ht) const ;
     std::optional<KeyPtr> insertR(Node& h, const Item& x, int ht, u64 current_blk_addr) ;
 
     KeyPtr split(Node& h, u64 addr) ;
@@ -107,7 +107,7 @@ class BTree {
 
 public:
 
-    std::optional<Item> search(Key key) ;
+    std::optional<Item> search(Key key) const ;
     void insert(Item item);
 
     BTree () = delete;
@@ -117,7 +117,7 @@ public:
     inline void load() {
         read(fd, &sb, sizeof(sb));
         lseek(fd, sb.root_tree_root_, SEEK_SET);
-        read(fd, &root, sizeof(root));
+        read(fd, &root, sizeof(root)); 
     }
     inline void load(int fd) {
         this->fd = fd;
