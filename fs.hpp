@@ -6,6 +6,8 @@
 #include <cstdint>
 #include <cstring>
 #include <random>
+#include <fcntl.h>
+#include <unistd.h>
 
 using u64 = uint64_t;
 using u32 = uint32_t;
@@ -95,6 +97,9 @@ struct [[gnu::packed]] SuperBlock {
     u64 root_tree_root_; 
     u32 nodesize_ = BLOCK_SIZE;
 
+    mutable u64 next_free_block_;
+    mutable u64 next_inode_id_;
+
     SuperBlock() {
         std::memset(this, 0, sizeof(SuperBlock)); 
         std::memmove(magic_, "MINIBTFS", 8);
@@ -114,6 +119,23 @@ struct [[gnu::packed]] SuperBlock {
 
 
         root_tree_root_ = BLOCK_SIZE; 
+    }
+
+    inline u64 allocate_block(int fd) const {
+        u64 addr = next_free_block_;
+        next_free_block_ += BLOCK_SIZE;
+        
+    
+        lseek(fd, 0, SEEK_SET); 
+        write(fd, this, sizeof(fs::SuperBlock));
+        return addr;
+    }
+
+    inline u64 allocate_inode(int fd) const {
+        u64 id = next_inode_id_++;
+        lseek(fd, 0, SEEK_SET); 
+        write(fd, this, sizeof(fs::SuperBlock));
+        return id;
     }
 };
 
@@ -177,11 +199,7 @@ struct [[gnu::unused]] [[gnu::packed]] ExtentItems {
 };
 
 
-inline u64 allocate_block() {
-    static u64 mock_addr = 10 * 1024 * 1024; 
-    mock_addr += BLOCK_SIZE;
-    return mock_addr;
-}
+
 
     
 } // namespace fs

@@ -6,8 +6,9 @@
 namespace minibtrfs {
 
 
+
 void MiniBtrfs::mkdir(u64 parent_id, const char* name) {
-    u64 new_id = next_inode_id++;
+    u64 new_id = tree.getSuperBlock().allocate_inode(fd);
 
     // ====================================================================
     // ШАГ 1: Обновляем родительскую директорию (Добавляем в нее файл)
@@ -35,8 +36,8 @@ void MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     std::memset(&dir_item, 0, sizeof(fs::DirItem)); // Очищаем память от мусора
     dir_item.location = btree::Key{new_id, btree::Type::INODE_ITEM, 0};
     std::strncpy((char*)dir_item.name, name, fs::MAX_NAME_SIZE);
-
-    u64 dir_item_addr = fs::allocate_block();
+    
+    u64 dir_item_addr = tree.getSuperBlock().allocate_block(fd);
     lseek(fd, dir_item_addr, SEEK_SET);
     write(fd, &dir_item, sizeof(fs::DirItem));
 
@@ -48,6 +49,7 @@ void MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     tree_dir_item.data_size_ = sizeof(fs::DirItem);
     tree.insert(tree_dir_item);
 
+    
     std::cerr << "[DEBUG] Inserted DirItem for key: (" 
           << tree_dir_item.key_.id_ << ", " 
           << (int)tree_dir_item.key_.type_ << ", " 
@@ -61,7 +63,8 @@ void MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     fs::InodeItem new_inode(fs::InodeType::Dir);
 
 
-    u64 inode_addr = fs::allocate_block();
+    u64 inode_addr = tree.getSuperBlock().allocate_block(fd);
+
     lseek(fd, inode_addr, SEEK_SET);
     write(fd, &new_inode, sizeof(fs::InodeItem));
     
@@ -77,7 +80,7 @@ void MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     new_inode_ref.parent = btree::Key{parent_id, btree::Type::INODE_ITEM, 0}; 
     std::strncpy((char*)new_inode_ref.name, name, fs::MAX_NAME_SIZE);
 
-    u64 ref_addr = fs::allocate_block();
+    u64 ref_addr = tree.getSuperBlock().allocate_block(fd);
     lseek(fd, ref_addr, SEEK_SET);
     write(fd, &new_inode_ref, sizeof(fs::InodeRef));
 
@@ -94,7 +97,7 @@ void MiniBtrfs::mkdir(u64 parent_id, const char* name) {
     new_dir_index.cnt = 0; 
     new_dir_index.start = btree::Key{new_id, btree::Type::DIR_ITEM, 0}; 
 
-    u64 index_addr = fs::allocate_block();
+    u64 index_addr = tree.getSuperBlock().allocate_block(fd);
     lseek(fd, index_addr, SEEK_SET);
     write(fd, &new_dir_index, sizeof(fs::DirIndex));
 

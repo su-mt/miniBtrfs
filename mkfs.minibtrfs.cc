@@ -17,7 +17,7 @@ int main (int argc, char** argv) {
 
 
     if (atoi(argv[2]) < MIN_FS_SIZE){
-        std::cout << "Size of fs must be greater than" << MIN_FS_SIZE << std::endl;
+        std::cout << "Size of fs must be greater than " << MIN_FS_SIZE << std::endl;
         return 0;
     }
 
@@ -36,7 +36,7 @@ int main (int argc, char** argv) {
 
 
     fs::InodeItem root_inode(fs::InodeType::Dir);
-    u64 root_inode_addr = fs::allocate_block();
+    u64 root_inode_addr = sb.allocate_block(fd);
 
     lseek(fd, root_inode_addr, SEEK_SET);
     write(fd, &root_inode, sizeof(fs::InodeItem));
@@ -55,7 +55,7 @@ int main (int argc, char** argv) {
     root_inode_ref.parent = btree::Key{256, btree::Type::INODE_ITEM, 0};
     std::memcpy(root_inode_ref.name, "/", 2);
 
-    u64 ref_addr = fs::allocate_block();
+    u64 ref_addr = sb.allocate_block(fd);
     lseek(fd, ref_addr, SEEK_SET);
     write(fd, &root_inode_ref, sizeof(fs::InodeRef));
 
@@ -74,7 +74,7 @@ int main (int argc, char** argv) {
     root_dir_index.start = btree::Key{256, btree::Type::DIR_ITEM, 0}; 
 
     // Выделяем физический блок для DirIndex
-    u64 index_addr = fs::allocate_block();
+    u64 index_addr = sb.allocate_block(fd);
     
     // Записываем DirIndex на диск
     lseek(fd, index_addr, SEEK_SET);

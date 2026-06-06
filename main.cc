@@ -22,12 +22,16 @@ int main(int argc, char** argv)
                 }
                 
             } else if (cmd == "mkdir") {
-                std::cin >> dirname;
+                std::cin >> std::ws; 
+                std::getline(std::cin, dirname);
                 try {
                     FS.mkdir(256, dirname.c_str());
                 } catch (const std::exception& e) {
                     std::cerr << e.what() << "\n";
                 }
+            }else if (cmd == "exit"){
+                std::cout << "Connection with " << argv[1] << " closed!" << std::endl;
+                return 0;
             } else {
                 std::cout << "Command not found!" << std::endl;
             }

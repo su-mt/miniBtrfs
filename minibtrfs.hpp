@@ -10,7 +10,7 @@
 #include "btree.hpp"
 #include "fs.hpp"
 #include <fcntl.h>
-#include <iostream>
+
 
 namespace minibtrfs {
 
@@ -37,6 +37,7 @@ public:
     void ls(u64 dir_id);
 
     bool inspectFS();
+
 
 };
 

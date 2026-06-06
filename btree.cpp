@@ -49,7 +49,7 @@ KeyPtr BTree::split(Node& h, u64 addr) {
     h.hdr_.nritems_ = left_capacity;
     right_node.hdr_.nritems_ = right_capacity;
 
-    u64 right_node_addr = fs::allocate_block();
+    u64 right_node_addr = sb.allocate_block(fd);
 
     lseek(fd, addr, SEEK_SET);
     write(fd, &h, BLOCK_SIZE);
@@ -124,7 +124,7 @@ void BTree::insert(Item item) {
     auto split_child = insertR(root, item, root.hdr_.level_, root_addr);
     
     if (split_child.has_value()) {
-        u64 left_child_addr = fs::allocate_block();
+        u64 left_child_addr = sb.allocate_block(fd);
         Node left_node = root;
         
         lseek(fd, left_child_addr, SEEK_SET);
