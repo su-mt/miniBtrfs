@@ -3,6 +3,7 @@
 #include <stack>
 #include <string>
 #include <utility>
+#include <vector>
 #include "minibtrfs.hpp"
 int main(int argc, char** argv)
 {
@@ -112,6 +113,36 @@ int main(int argc, char** argv)
                     }
                 }
 
+            } else if (cmd == "cat") {
+                std::cin >> std::ws; 
+                std::getline(std::cin, dirname);
+                bool ok = true;
+                u64 inode_id;
+                std::vector<u8> data;
+                try {
+                    inode_id = FS.resolve_path(dir_id, dirname.c_str());
+                } catch (const std::invalid_argument& e) {
+                    std::cout << e.what() << "\n";
+                    ok = false;
+                } catch (const std::exception& e) {
+                    std::cerr << e.what() << "\n";
+                    ok = false;
+                }
+                if (ok){
+                    try {
+                        data  = FS.read_file(inode_id, 0);
+                    } catch (const std::invalid_argument& e) {
+                        std::cout << e.what() << "\n";
+                        ok = false;
+                        
+                    } catch (const std::exception& e) {
+                        std::cerr << e.what() << "\n";
+                        ok = false;
+                    }
+                    if (ok){
+                        std::cout << std::string(data.begin(), data.end()) << "\n";
+                    }
+                }
             } else if (cmd == "exit"){
                 std::cout << "Connection with " << argv[1] << " closed!" << std::endl;
                 return 0;

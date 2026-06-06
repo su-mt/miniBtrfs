@@ -476,4 +476,60 @@ void MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t of
     return current_id;
 }
 
+
+
+std::vector<u8> MiniBtrfs::read_file(u64 inode_id, off_t offset) const {
+    // 1. Читаем Inode, чтобы узнать реальный размер файла и избежать чтения "мусора"
+    auto inode_item = tree.search(btree::Key{inode_id, btree::Type::INODE_ITEM, 0});
+    if (!inode_item) {
+        throw std::runtime_error("read_file: Inode not found!");
+    }
+
+    fs::InodeItem inode;
+    lseek(fd, inode_item->data_offset_, SEEK_SET);
+    read(fd, &inode, sizeof(fs::InodeItem));
+
+    // Проверка на выход за границы файла (EOF)
+    if (offset >= inode.size) {
+        return std::vector<u8>(); // Возвращаем пустой вектор
+    }
+
+    // Вычисляем, сколько байт реально нужно прочитать
+    size_t bytes_to_read = inode.size - offset;
+    std::vector<u8> buffer(bytes_to_read);
+
+    // ====================================================================
+    // ПУТЬ А: Проверяем наличие INLINE экстента (данные прямо в дереве)
+    // ====================================================================
+    auto inline_ext = tree.search(btree::Key{inode_id, btree::Type::EXTENT_INLINE, (u64)offset});
+    if (inline_ext) {
+        // Данные лежат по адресу data_offset_ самого элемента дерева
+        lseek(fd, inline_ext->data_offset_, SEEK_SET);
+        read(fd, buffer.data(), bytes_to_read);
+        
+        std::cerr << "[DEBUG] Read INLINE extent for Inode " << inode_id << "\n";
+        return buffer;
+    }
+
+    // ====================================================================
+    // ПУТЬ Б: Ищем REGULAR экстент (дескриптор -> физический блок)
+    // ====================================================================
+    auto reg_ext = tree.search(btree::Key{inode_id, btree::Type::EXTENT_DATA, (u64)offset});
+    if (!reg_ext) {
+        throw std::runtime_error("read_file: Extent missing or file is sparse / corrupted");
+    }
+
+    // Читаем дескриптор экстента
+    fs::Extentdata ext_item;
+    lseek(fd, reg_ext->data_offset_, SEEK_SET);
+    read(fd, &ext_item, sizeof(fs::Extentdata));
+
+    // Переходим по физическому адресу (disk_bytenr) и читаем сырые байты
+    lseek(fd, ext_item.block_addr, SEEK_SET);
+    read(fd, buffer.data(), bytes_to_read);
+
+    std::cerr << "[DEBUG] Read REGULAR extent at physical addr " << ext_item.block_addr << "\n";
+    return buffer;
+}
+
 } // minibtrfs

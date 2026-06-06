@@ -37,6 +37,7 @@ public:
     void ls(u64 dir_id);
     void create_file(u64 parent_id, const char* name);
     void write_file(u64 inode_id, const void* data, size_t size, off_t offset); 
+    std::vector<u8> read_file(u64 inode_id, off_t offset) const;
     u64 resolve_path(u64 current_dir_id, const char* path) const ;
     [[nodiscard]] u64 cd(u64 current_dir_id, const char* name) const;
 
