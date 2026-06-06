@@ -2,6 +2,9 @@
 #include "fs.hpp"
 #include <iostream>
 #include <string>
+#include <sstream>
+#include <string>
+#include <stdexcept>
 
 namespace minibtrfs {
 
@@ -323,6 +326,154 @@ bool MiniBtrfs::inspectFS() {
     return true;
 }
 
+void MiniBtrfs::write_file(u64 inode_id, const void* data, size_t size, off_t offset) {
+    // 1. Ищем Inode файла, чтобы потом обновить его размер
+    auto inode_item = tree.search(btree::Key{inode_id, btree::Type::INODE_ITEM, 0});
+    if (!inode_item) {
+        throw std::runtime_error("write_file: Inode not found!");
+    }
 
+    fs::InodeItem inode;
+    lseek(fd, inode_item->data_offset_, SEEK_SET);
+    read(fd, &inode, sizeof(fs::InodeItem));
+
+    // Устанавливаем порог для INLINE (например, половина стандартного блока или 512 байт)
+    
+
+    // 2. Логика распределения: INLINE или REGULAR
+    if (offset == 0 && size <= btree::MAX_INLINE_SIZE) {
+        // ==========================================
+        // ПУТЬ А: INLINE EXTENT (Маленький файл)
+        // ==========================================
+        
+        // Выделяем место под payload дерева и пишем туда СЫРЫЕ данные
+        u64 data_addr = tree.getSuperBlock().allocate_block(fd);
+        lseek(fd, data_addr, SEEK_SET);
+        write(fd, data, size);
+
+        btree::Item inline_item;
+        inline_item.key_ = btree::Key{inode_id, btree::Type::EXTENT_INLINE, (u64)offset};
+        inline_item.data_offset_ = data_addr; // Указывает прямо на байты файла
+        inline_item.data_size_ = size;
+        tree.insert(inline_item);
+
+        std::cout << "[DEBUG] Wrote INLINE extent for Inode " << inode_id << " (size: " << size << ")\n";
+
+    } else {
+        // ==========================================
+        // ПУТЬ Б: REGULAR EXTENT (Большой файл)
+        // ==========================================
+
+        // Шаг Б.1: Выделяем блок(и) под сами данные на диске
+        u64 raw_data_block = tree.getSuperBlock().allocate_block(fd);
+        // В реальной системе тут может быть цикл аллокации для файлов > размера блока,
+        // но для MiniBtrfs пишем напрямую в выделенный адрес.
+        lseek(fd, raw_data_block, SEEK_SET);
+        write(fd, data, size);
+
+        // Шаг Б.2: Создаем дескриптор экстента (метаданные)
+
+        fs::Extentdata ext_item;
+        ext_item.block_addr = raw_data_block;
+        ext_item.size = size;
+
+        // Шаг Б.3: Выделяем место под payload для B-дерева и пишем дескриптор
+        u64 ext_desc_addr = tree.getSuperBlock().allocate_block(fd);
+        lseek(fd, ext_desc_addr, SEEK_SET);
+        write(fd, &ext_item, sizeof(fs::Extentdata));
+
+        // Шаг Б.4: Вставляем ключ в B-дерево
+        btree::Item tree_extent_item;
+        tree_extent_item.key_ = btree::Key{inode_id, btree::Type::EXTENT_DATA, (u64)offset};
+        tree_extent_item.data_offset_ = ext_desc_addr; // Указывает на структуру ExtentItem
+        tree_extent_item.data_size_ = sizeof(fs::Extentdata);
+        tree.insert(tree_extent_item);
+
+        std::cout << "[DEBUG] Wrote REGULAR extent for Inode " << inode_id 
+                  << " at offset " << offset << "\n";
+    }
+
+    // 3. Обновляем размер файла в Inode, если мы дописали в конец
+    if (offset + size > inode.size) {
+        inode.size = offset + size;
+        lseek(fd, inode_item->data_offset_, SEEK_SET);
+        write(fd, &inode, sizeof(fs::InodeItem));
+    }
+
+    // Сбрасываем буферы на диск
+    fsync(fd);
+}
+
+
+
+[[nodiscard]] u64 MiniBtrfs::resolve_path(u64 current_dir_id, const char* path) const {
+    std::string path_str(path);
+    if (path_str.empty()) return current_dir_id;
+
+    u64 current_id = current_dir_id;
+
+    // Если путь абсолютный (начинается с '/'), принудительно стартуем с корня
+    if (path_str[0] == '/') {
+        current_id = 256; // Базовый ROOT_ID
+    }
+
+    std::stringstream ss(path_str);
+    std::string token;
+
+    // Разбиваем путь по слешу '/'
+    while (std::getline(ss, token, '/')) {
+        // Пропускаем пустые токены (например, из "//" или начального "/")
+        if (token.empty() || token == ".") {
+            continue; 
+        }
+
+        // 1. Защита от попытки "войти" в обычный файл (эмуляция ENOTDIR)
+        auto inode_item = tree.search(btree::Key{current_id, btree::Type::INODE_ITEM, 0});
+        if (!inode_item) throw std::runtime_error("resolve: Corrupted inode link");
+
+        fs::InodeItem inode;
+        lseek(fd, inode_item->data_offset_, SEEK_SET);
+        read(fd, &inode, sizeof(fs::InodeItem));
+
+        if (inode.isDir()) { // 1 — это директория
+            throw std::invalid_argument("resolve: Not a directory");
+        }
+
+        // 2. Читаем дескриптор текущей директории
+        auto index_item = tree.search(btree::Key{current_id, btree::Type::DIR_INDEX, 0});
+        if (!index_item) throw std::runtime_error("resolve: Directory metadata missing");
+
+        fs::DirIndex p_index;
+        lseek(fd, index_item->data_offset_, SEEK_SET);
+        read(fd, &p_index, sizeof(fs::DirIndex));
+
+        bool found = false;
+
+        // 3. Сканируем элементы в поиске текущего токена
+        for (u64 i = 0; i < p_index.cnt; i++) {
+            auto dir_tree_item = tree.search(btree::Key{current_id, btree::Type::DIR_ITEM, i});
+            if (!dir_tree_item) continue;
+
+            fs::DirItem dir_item;
+            lseek(fd, dir_tree_item->data_offset_, SEEK_SET);
+            read(fd, &dir_item, sizeof(fs::DirItem));
+
+            // Если имя совпало, "проваливаемся" на уровень ниже
+            if (token == (const char*)dir_item.name) {
+                current_id = dir_item.location.id_;
+                found = true;
+                break;
+            }
+        }
+
+        // Если цикл завершился, а токен не найден — путь ошибочный
+        if (!found) {
+            throw std::invalid_argument("resolve: No such file or directory: " + token);
+        }
+    }
+
+    // Возвращаем ID последнего найденного элемента (это может быть папка или файл)
+    return current_id;
+}
 
 } // minibtrfs

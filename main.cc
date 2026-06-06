@@ -53,8 +53,7 @@ int main(int argc, char** argv)
                     while (!dirStack.empty()) {
                         dirStack.pop();
                     }
-                } 
-                else {
+                } else {
                     try {
                         prevVisDirId = dir_id;
                         dirStack.push(dir_id);
@@ -67,7 +66,7 @@ int main(int argc, char** argv)
                 }
 
                 
-            }else if (cmd == "touch") {
+            } else if (cmd == "touch") {
                 std::cin >> std::ws; 
                 std::getline(std::cin, dirname);
                 try {
@@ -75,6 +74,44 @@ int main(int argc, char** argv)
                 } catch (const std::exception& e) {
                     std::cerr << e.what() << "\n";
                 }
+            } else if (cmd == "vim") {
+                std::cin >> std::ws; 
+                std::getline(std::cin, dirname);
+
+                bool ok = true;
+                u64 inode_id;
+                try {
+                    inode_id = FS.resolve_path(dir_id, dirname.c_str());
+                } catch (const std::invalid_argument& e) {
+                    std::cout << e.what() << "\n";
+                    ok = false;
+                } catch (const std::exception& e) {
+                    std::cerr << e.what() << "\n";
+                    ok = false;
+                }
+                if (ok) {
+                    std::cout << "VIM>> ";
+                    char c;
+                    std::string input;
+                    std::string exit; exit += ":wq";
+                    while (std::cin.get(c)) {
+                        input.push_back(c);
+                        if (input.size() >= 3 &&
+                            input.substr(input.size() - 3) == exit) {
+                            input.erase(input.size() - 3);
+                            break;
+                        }
+                    }
+                    try {
+                        FS.write_file(inode_id, static_cast<const void*>(input.c_str()), input.size() ,0);
+                    } catch (const std::invalid_argument& e) {
+                        std::cout << e.what() << "\n";
+                        
+                    } catch (const std::exception& e) {
+                        std::cerr << e.what() << "\n";
+                    }
+                }
+
             } else if (cmd == "exit"){
                 std::cout << "Connection with " << argv[1] << " closed!" << std::endl;
                 return 0;

@@ -169,8 +169,8 @@ struct [[gnu::packed]] InodeRef {
 };
 
 struct [[gnu::packed]] Extentdata {
-    u64 disk_bytenr; // Где искать данные на диске
-    u64 num_bytes;   // Сколько байт читать
+    u64 block_addr; // Где искать данные на диске
+    u64 size;   // Сколько байт читать
 };
 
 struct [[gnu::packed]] ExtentInline {

@@ -43,6 +43,7 @@ struct [[gnu::packed]] KeyPtr {
 constexpr u16 DATA_SIZE = BLOCK_SIZE - sizeof(Header);
 constexpr u16 ITEMS_SIZE = DATA_SIZE / sizeof(Item);
 constexpr u16 PTRS_SIZE = DATA_SIZE / sizeof(KeyPtr);
+constexpr u16 MAX_INLINE_SIZE = 512; 
 
 struct [[gnu::packed]] Node {
     Header hdr_;
