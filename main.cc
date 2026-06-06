@@ -42,6 +42,7 @@ int main(int argc, char** argv)
                 } else if (dirname == "-"){
                     std::swap(dir_id, prevVisDirId);
                 } else if (dirname == "..") {
+                    // FIXME:: this impl use stack, but parent id stored in INODE_REF, we should use it;
                     prevVisDirId = dir_id;
                     if (!dirStack.empty()){
                         dir_id = dirStack.top(); dirStack.pop();
@@ -66,6 +67,14 @@ int main(int argc, char** argv)
                 }
 
                 
+            }else if (cmd == "touch") {
+                std::cin >> std::ws; 
+                std::getline(std::cin, dirname);
+                try {
+                    FS.create_file(dir_id, dirname.c_str());
+                } catch (const std::exception& e) {
+                    std::cerr << e.what() << "\n";
+                }
             } else if (cmd == "exit"){
                 std::cout << "Connection with " << argv[1] << " closed!" << std::endl;
                 return 0;

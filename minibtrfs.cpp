@@ -218,7 +218,82 @@ void MiniBtrfs::ls(u64 dir_id) {
     throw std::invalid_argument("cd: No such file or directory");
 }
 
+void MiniBtrfs::create_file(u64 parent_id, const char* name) {
+    u64 new_id =tree.getSuperBlock().allocate_inode(fd);
 
+    // ====================================================================
+    // ШАГ 1: Обновляем родительскую директорию (Точно так же, как в mkdir)
+    // ====================================================================
+    
+    auto parent_index_item = tree.search(btree::Key{parent_id, btree::Type::DIR_INDEX, 0});
+    if (!parent_index_item) {
+        throw std::runtime_error("create_file: Parent directory not found!");
+    }
+
+    fs::DirIndex p_index;
+    lseek(fd, parent_index_item->data_offset_, SEEK_SET);
+    read(fd, &p_index, sizeof(fs::DirIndex));
+    
+    u64 current_offset = p_index.cnt; 
+    p_index.cnt++;                    
+    
+    lseek(fd, parent_index_item->data_offset_, SEEK_SET);
+    write(fd, &p_index, sizeof(fs::DirIndex)); 
+
+    fs::DirItem dir_item;
+    std::memset(&dir_item, 0, sizeof(fs::DirItem));
+    dir_item.location = btree::Key{new_id, btree::Type::INODE_ITEM, 0};
+    std::strncpy((char*)dir_item.name, name, fs::MAX_NAME_SIZE);
+
+    u64 dir_item_addr = tree.getSuperBlock().allocate_block(fd);
+    lseek(fd, dir_item_addr, SEEK_SET);
+    write(fd, &dir_item, sizeof(fs::DirItem));
+
+    btree::Item tree_dir_item;
+    tree_dir_item.key_ = btree::Key{parent_id, btree::Type::DIR_ITEM, current_offset};
+    tree_dir_item.data_offset_ = dir_item_addr;
+    tree_dir_item.data_size_ = sizeof(fs::DirItem);
+    tree.insert(tree_dir_item);
+
+    // ====================================================================
+    // ШАГ 2: Создаем сам файл (Только InodeItem и InodeRef)
+    // ====================================================================
+
+    // 2.1 Создаем InodeItem (Паспорт файла)
+    fs::InodeItem new_inode;
+    std::memset(&new_inode, 0, sizeof(fs::InodeItem));
+    new_inode.size = 0; // Изначально файл пуст
+    new_inode.mode = fs::InodeType::File; // 0 - обычный файл (FILE)
+
+    u64 inode_addr = tree.getSuperBlock().allocate_block(fd);
+    lseek(fd, inode_addr, SEEK_SET);
+    write(fd, &new_inode, sizeof(fs::InodeItem));
+    
+    btree::Item inode_tree_item;
+    inode_tree_item.key_ = btree::Key{new_id, btree::Type::INODE_ITEM, 0};
+    inode_tree_item.data_offset_ = inode_addr;
+    inode_tree_item.data_size_ = sizeof(fs::InodeItem);
+    tree.insert(inode_tree_item);
+
+    // 2.2 Создаем InodeRef (Обратная ссылка на родительскую папку)
+    fs::InodeRef new_inode_ref;
+    std::memset(&new_inode_ref, 0, sizeof(fs::InodeRef));
+    new_inode_ref.parent = btree::Key{parent_id, btree::Type::INODE_ITEM, 0}; 
+    std::strncpy((char*)new_inode_ref.name, name, fs::MAX_NAME_SIZE);
+
+    u64 ref_addr = tree.getSuperBlock().allocate_block(fd);
+    lseek(fd, ref_addr, SEEK_SET);
+    write(fd, &new_inode_ref, sizeof(fs::InodeRef));
+
+    btree::Item ref_tree_item;
+    ref_tree_item.key_ = btree::Key{new_id, btree::Type::INODE_REF, parent_id}; 
+    ref_tree_item.data_offset_ = ref_addr;
+    ref_tree_item.data_size_ = sizeof(fs::InodeRef);
+    tree.insert(ref_tree_item);
+
+    // Синхронизируем изменения
+    fsync(fd);
+}
 
 bool MiniBtrfs::inspectFS() {
 
